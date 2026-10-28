@@ -1,0 +1,5 @@
+# Keep LF everywhere (shell hooks, Dockerfiles, nginx config break with CRLF); Windows scripts keep CRLF
+* text=auto eol=lf
+*.bat text eol=crlf
+*.png binary
+*.ico binary

@@ -1,0 +1,14 @@
+#!/bin/sh
+# Runs all tests before `git push`. Skip in an emergency with: git push --no-verify
+# Enable once per clone with: git config core.hooksPath .githooks
+
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+
+echo "▶ Backend tests"
+(cd "$ROOT/backend" && npm test --silent)
+
+echo "▶ Frontend tests"
+(cd "$ROOT/frontend" && CI=true npm test --silent -- --watchAll=false)
+
+echo "✅ All tests passed — pushing"

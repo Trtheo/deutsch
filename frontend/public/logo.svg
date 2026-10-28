@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Deutsch Lernen">
+  <defs>
+    <linearGradient id="bubble" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde047"/>
+      <stop offset="1" stop-color="#facc15"/>
+    </linearGradient>
+    <clipPath id="baseline"><rect x="0" y="0" width="512" height="330"/></clipPath>
+  </defs>
+  <!-- App tile -->
+  <rect width="512" height="512" rx="112" fill="#111827"/>
+  <!-- Speech bubble with tail -->
+  <path fill="url(#bubble)" d="M164 112h184a56 56 0 0 1 56 56v148a56 56 0 0 1-56 56H236l-72 52 14-52h-14a56 56 0 0 1-56-56V168a56 56 0 0 1 56-56z"/>
+  <!-- Ä -->
+  <g fill="none" stroke="#111827" stroke-width="34" stroke-linejoin="round" clip-path="url(#baseline)">
+    <path d="M182 346 256 200l74 146"/>
+    <path d="M218 286h76"/>
+  </g>
+  <circle cx="228" cy="164" r="17" fill="#111827"/>
+  <circle cx="284" cy="164" r="17" fill="#111827"/>
+  <!-- German flag accent -->
+  <rect x="300" y="404" width="24" height="10" rx="5" fill="#374151"/>
+  <rect x="330" y="404" width="24" height="10" rx="5" fill="#dc2626"/>
+  <rect x="360" y="404" width="24" height="10" rx="5" fill="#facc15"/>
+</svg>
