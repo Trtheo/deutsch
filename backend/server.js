@@ -125,7 +125,8 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     user.resetToken = token;
     user.resetTokenExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30 min
     await user.save();
-    const resetLink = `${process.env.APP_URL}/reset-password?token=${token}&email=${encodeURIComponent(email)}`;
+    const appUrl = (process.env.APP_URL || '').replace(/\/+$/, ''); // tolerate a trailing slash
+    const resetLink = `${appUrl}/reset-password?token=${token}&email=${encodeURIComponent(email)}`;
     await transporter.sendMail({
       from: `"Deutsch Lernen" <${process.env.EMAIL_USER}>`,
       to: email,
