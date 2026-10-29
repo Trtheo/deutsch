@@ -18,9 +18,13 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(undefined, error => {
   const msg = error.response?.data?.error;
   // Only when a session existed: on public pages (verify email, reset password) there is nothing to clear
-  if (error.response?.status === 401 && (msg === 'No token' || msg === 'Invalid token') && localStorage.getItem('deutsch_token')) {
+  const expired = error.response?.status === 401 && (msg === 'No token' || msg === 'Invalid token');
+  const deactivated = error.response?.status === 403 && error.response?.data?.code === 'ACCOUNT_DEACTIVATED';
+  if ((expired || deactivated) && localStorage.getItem('deutsch_token')) {
     localStorage.removeItem('deutsch_token');
     localStorage.removeItem('deutsch_user');
+    // Shown on the login screen after the reload
+    if (deactivated) try { sessionStorage.setItem('auth_notice', msg); } catch {}
     window.location.reload();
   }
   return Promise.reject(error);
@@ -68,6 +72,7 @@ export const deleteComment = (slug, id)   => api.delete(`/lessons/${slug}/commen
 export const adminGetAnalytics  = ()           => api.get('/admin/analytics');
 export const adminGetUsers      = ()           => api.get('/admin/users');
 export const adminUpdateRole    = (id, role)   => api.put(`/admin/users/${id}/role`, { role });
+export const adminSetUserStatus = (id, active) => api.patch(`/admin/users/${id}/status`, { active });
 export const adminDeleteUser    = (id)         => api.delete(`/admin/users/${id}`);
 export const adminGetContacts   = ()           => api.get('/admin/contacts');
 export const adminMarkRead      = (id)         => api.patch(`/admin/contacts/${id}/read`);

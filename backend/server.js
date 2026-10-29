@@ -64,15 +64,26 @@ for (const key of ['MONGODB_URI', 'JWT_SECRET']) {
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-function authMiddleware(req, res, next) {
+const DEACTIVATED = { code: 'ACCOUNT_DEACTIVATED', error: 'Your account has been deactivated. Please contact support.' };
+
+// Checks the token, then the account itself: deleted or deactivated accounts lose access at once
+// (tokens last 30 days), and role changes apply immediately
+async function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token' });
+  let payload;
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch {
-    res.status(401).json({ error: 'Invalid token' });
+    return res.status(401).json({ error: 'Invalid token' });
   }
+  try {
+    const account = await User.findById(payload.id).select('username role deactivated').lean();
+    if (!account) return res.status(401).json({ error: 'Invalid token' });
+    if (account.deactivated) return res.status(403).json(DEACTIVATED);
+    req.user = { ...payload, username: account.username, role: account.role };
+    next();
+  } catch (err) { res.status(500).json({ error: err.message }); }
 }
 
 // ── Auth helpers ──────────────────────────────────────────
@@ -153,6 +164,7 @@ app.post('/api/auth/login', async (req, res) => {
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
     // Accounts created before verification existed have no emailVerified field and count as verified
+    if (user.deactivated) return res.status(403).json(DEACTIVATED);
     if (user.emailVerified === false) {
       return res.status(403).json({ code: 'EMAIL_NOT_VERIFIED', email: user.email, error: 'Please verify your email first. Check your inbox for the link.' });
     }
@@ -168,6 +180,7 @@ app.post('/api/auth/verify-email', async (req, res) => {
     if (!email || !token) return res.status(400).json({ error: 'Invalid verification link.' });
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ error: 'Invalid verification link.' });
+    if (user.deactivated) return res.status(403).json(DEACTIVATED);
     if (user.emailVerified !== false && !user.verifyTokenHash) {
       return res.status(400).json({ code: 'ALREADY_VERIFIED', error: 'This email is already verified. Please sign in.' });
     }
@@ -376,6 +389,18 @@ app.get('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) =>
   try {
     const users = await User.find().select(PRIVATE_USER_FIELDS).sort({ createdAt: -1 });
     res.json(users);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.patch('/api/admin/users/:id/status', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { active } = req.body;
+    if (typeof active !== 'boolean') return res.status(400).json({ error: 'active must be true or false' });
+    if (req.params.id === String(req.user.id)) return res.status(400).json({ error: 'You cannot deactivate your own account' });
+    const update = active ? { deactivated: false, deactivatedAt: null } : { deactivated: true, deactivatedAt: new Date() };
+    const user = await User.findByIdAndUpdate(req.params.id, update, { returnDocument: 'after' }).select(PRIVATE_USER_FIELDS);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

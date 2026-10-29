@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { adminGetUsers, adminUpdateRole, adminDeleteUser, adminGetContacts, adminMarkRead, adminDeleteContact, adminBroadcast, adminGetAnalytics } from '../api';
+import { adminGetUsers, adminUpdateRole, adminSetUserStatus, adminDeleteUser, adminGetContacts, adminMarkRead, adminDeleteContact, adminBroadcast, adminGetAnalytics } from '../api';
 import { Trash2, ShieldCheck, ShieldOff, AlertCircle, MessageSquare, Users, Mail, MailOpen, Send, CheckCircle2, BarChart2, TrendingUp, BookOpen, MessageCircle, Star, ClipboardList } from 'lucide-react';
 import { useDialog } from '../components/Dialog';
 
@@ -63,6 +63,20 @@ export default function AdminPage() {
       const res = await adminUpdateRole(u._id, newRole);
       setUsers(prev => prev.map(x => x._id === u._id ? res.data : x));
     } catch (e) { setUsersError(e.response?.data?.error || 'Failed to update role'); }
+  };
+
+  const toggleStatus = async (u) => {
+    const activating = !!u.deactivated;
+    const ok = await confirm(activating
+      ? { tone: 'info', title: 'Activate this user?', confirmLabel: 'Activate',
+          message: `${u.username} will be able to log in again with their existing password and progress.` }
+      : { tone: 'warning', title: 'Deactivate this user?', confirmLabel: 'Deactivate',
+          message: `${u.username} will be signed out right away and can’t log in until you activate the account again. Their progress is kept.` });
+    if (!ok) return;
+    try {
+      const res = await adminSetUserStatus(u._id, activating);
+      setUsers(prev => prev.map(x => x._id === u._id ? res.data : x));
+    } catch (e) { setUsersError(e.response?.data?.error || 'Failed to update the account'); }
   };
 
   const deleteUser = async (u) => {
@@ -187,13 +201,14 @@ export default function AdminPage() {
                     <th className="px-4 py-3">Email</th>
                     <th className="px-4 py-3">Level</th>
                     <th className="px-4 py-3">Role</th>
+                    <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Joined</th>
                     <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {users.map(u => (
-                    <tr key={u._id} className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
+                    <tr key={u._id} className={`border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors ${u.deactivated ? 'bg-red-50/40 dark:bg-red-500/5' : ''}`}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span className="text-xl">{u.avatar || '🧑'}</span>
@@ -217,12 +232,23 @@ export default function AdminPage() {
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
                         }`}>{u.role}</span>
                       </td>
+                      <td className="px-4 py-3">
+                        {u.deactivated
+                          ? <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-400"><span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Deactivated</span>
+                          : <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400"><span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Active</span>}
+                      </td>
                       <td className="px-4 py-3 text-gray-400 dark:text-gray-600 text-xs">
                         {new Date(u.createdAt).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
                         {u._id !== user.id && (
                           <div className="flex items-center gap-2">
+                            <button onClick={() => toggleStatus(u)}
+                              className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap ${u.deactivated
+                                ? 'bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-500/20'
+                                : 'bg-orange-100 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-500/20'}`}>
+                              {u.deactivated ? 'Activate' : 'Deactivate'}
+                            </button>
                             <button onClick={() => toggleRole(u)} title={u.role === 'admin' ? 'Revoke admin' : 'Make admin'}
                               className="p-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-500/10 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
                               {u.role === 'admin' ? <ShieldOff size={15} /> : <ShieldCheck size={15} />}

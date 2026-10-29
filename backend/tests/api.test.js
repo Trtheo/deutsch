@@ -205,6 +205,66 @@ describe('email verification', () => {
   });
 });
 
+describe('deactivating users', () => {
+  async function setup() {
+    const admin = await registerUser({ username: 'boss', email: 'boss@example.com' });
+    const adminToken = await makeAdmin(admin);
+    const anna = await registerUser();
+    return { adminToken, admin, anna };
+  }
+  const setStatus = (token, id, active) => request(app).patch(`/api/admin/users/${id}/status`).set(auth(token)).send({ active });
+
+  test('a deactivated user cannot log in and their open session stops working at once', async () => {
+    const { adminToken, anna } = await setup();
+    const res = await setStatus(adminToken, anna.user.id, false);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.deactivated, true);
+    assert.ok(res.body.deactivatedAt);
+
+    const login = await request(app).post('/api/auth/login').send({ email: 'anna@example.com', password: 'secret123' });
+    assert.equal(login.status, 403);
+    assert.equal(login.body.code, 'ACCOUNT_DEACTIVATED');
+
+    const me = await request(app).get('/api/auth/me').set(auth(anna.token));
+    assert.equal(me.status, 403);
+    assert.equal(me.body.code, 'ACCOUNT_DEACTIVATED');
+  });
+
+  test('reactivating restores access', async () => {
+    const { adminToken, anna } = await setup();
+    await setStatus(adminToken, anna.user.id, false);
+    const res = await setStatus(adminToken, anna.user.id, true);
+    assert.equal(res.body.deactivated, false);
+    assert.equal((await request(app).get('/api/auth/me').set(auth(anna.token))).status, 200);
+    assert.equal((await request(app).post('/api/auth/login').send({ email: 'anna@example.com', password: 'secret123' })).status, 200);
+  });
+
+  test('admins cannot deactivate themselves, and normal users cannot deactivate anyone', async () => {
+    const { adminToken, admin, anna } = await setup();
+    assert.equal((await setStatus(adminToken, admin.user.id, false)).status, 400);
+    assert.equal((await setStatus(anna.token, admin.user.id, false)).status, 403);
+    assert.equal((await setStatus(adminToken, anna.user.id, 'no')).status, 400);
+  });
+
+  test('the admin user list shows the status', async () => {
+    const { adminToken, anna } = await setup();
+    await setStatus(adminToken, anna.user.id, false);
+    const res = await request(app).get('/api/admin/users').set(auth(adminToken));
+    const row = res.body.find(u => u.username === 'anna');
+    assert.equal(row.deactivated, true);
+    assert.equal(row.password, undefined);
+  });
+
+  test('a deleted user’s token stops working, and role changes apply immediately', async () => {
+    const { adminToken, anna } = await setup();
+    await request(app).put(`/api/admin/users/${anna.user.id}/role`).set(auth(adminToken)).send({ role: 'admin' });
+    assert.equal((await request(app).get('/api/admin/users').set(auth(anna.token))).status, 200, 'promotion applies without logging in again');
+    await request(app).delete(`/api/admin/users/${anna.user.id}`).set(auth(adminToken));
+    const res = await request(app).get('/api/auth/me').set(auth(anna.token));
+    assert.equal(res.status, 401);
+  });
+});
+
 describe('protected routes require login', () => {
   const routes = [
     ['delete', '/api/lessons/some-slug'],

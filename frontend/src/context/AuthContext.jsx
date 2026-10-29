@@ -24,7 +24,14 @@ function AuthScreen({ onDone }) {
   const [usernameCustomized, setUsernameCustomized] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState(null);
   const debounceRef = useRef(null);
-  const [error, setError] = useState('');
+  // A notice left by a forced sign-out (e.g. account deactivated) is shown once
+  const [error, setError] = useState(() => {
+    try {
+      const notice = sessionStorage.getItem('auth_notice') || '';
+      sessionStorage.removeItem('auth_notice');
+      return notice;
+    } catch { return ''; }
+  });
   const [success, setSuccess] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');       // shown on the check-your-inbox screen
   const [unverifiedEmail, setUnverifiedEmail] = useState(''); // login refused until verified

@@ -19,6 +19,15 @@ describe('session expiry', () => {
     expect(window.location.reload).toHaveBeenCalled();
   });
 
+  test('a deactivated account is signed out with a notice for the login screen', async () => {
+    const error = { response: { status: 403, data: { code: 'ACCOUNT_DEACTIVATED', error: 'Your account has been deactivated. Please contact support.' } } };
+    await expect(onError(error)).rejects.toBe(error);
+    expect(localStorage.getItem('deutsch_token')).toBeNull();
+    expect(sessionStorage.getItem('auth_notice')).toMatch(/deactivated/);
+    expect(window.location.reload).toHaveBeenCalled();
+    sessionStorage.clear();
+  });
+
   test('a wrong password does not log the user out', async () => {
     const error = { response: { status: 401, data: { error: 'Current password is incorrect' } } };
     await expect(onError(error)).rejects.toBe(error);

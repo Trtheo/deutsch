@@ -60,6 +60,9 @@ const userSchema = new mongoose.Schema({
   avatar:   { type: String, default: '🧑' },
   bio:      { type: String, default: '' },
   role:     { type: String, enum: ['user', 'admin'], default: 'user' },
+  // Set by an admin: a deactivated user can't log in and their open sessions stop working
+  deactivated:   { type: Boolean, default: false },
+  deactivatedAt: { type: Date, default: null },
   // No default on purpose: accounts created before verification existed have no value and count as verified
   emailVerified:   { type: Boolean },
   verifyTokenHash: { type: String, default: null },
