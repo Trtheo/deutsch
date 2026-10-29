@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { getMe } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
-import { LevelBadge, ProgressBar } from '../components/UI';
+
 import { Star, Flame, CheckCircle2, LogOut, Save, KeyRound, AlertCircle, CheckCircle, Eye, EyeOff, User } from 'lucide-react';
 import LESSONS from '../lessons';
 
@@ -43,6 +44,12 @@ export default function ProfilePage() {
 
   const completed = LESSONS.filter(l => getLessonStatus(l.slug) === 'completed').length;
 
+  // The saved session has no sign-up date, so fetch it
+  const [memberSince, setMemberSince] = useState('');
+  useEffect(() => {
+    getMe().then(r => r.data?.createdAt && setMemberSince(new Date(r.data.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }))).catch(() => {});
+  }, []);
+
   const handleSaveProfile = async () => {
     if (!username.trim()) return setProfileMsg({ type: 'err', text: 'Username cannot be empty.' });
     setProfileLoading(true); setProfileMsg(null);
@@ -75,42 +82,61 @@ export default function ProfilePage() {
       </div>
 
       {/* Stats card */}
-      <div className="card bg-gradient-to-br from-yellow-50 to-white dark:from-yellow-400/5 dark:to-gray-900 border-yellow-200 dark:border-yellow-400/20">
+      <div className="rounded-2xl p-5 bg-gradient-to-br from-blue-600 to-emerald-500 text-white shadow-lg">
         <div className="flex items-center gap-4">
-          <div className="text-5xl">{avatar}</div>
+          <div className="w-16 h-16 rounded-full bg-white/20 ring-2 ring-white/40 flex items-center justify-center text-4xl flex-shrink-0">{avatar}</div>
           <div className="flex-1 min-w-0">
-            <div className="text-gray-900 dark:text-white font-bold text-lg truncate">
+            <div className="font-bold text-lg truncate">
               {firstName || lastName ? `${firstName} ${lastName}`.trim() : user.username}
             </div>
-            <div className="text-gray-500 dark:text-gray-400 text-sm">@{user.username} · {user.email}</div>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <LevelBadge level={user.level} />
-              {user.role === 'admin' && (
-                <span className="text-xs bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full font-semibold">Admin</span>
-              )}
-              {bio && <span className="text-gray-400 text-xs italic truncate">{bio}</span>}
+            <div className="text-white/80 text-sm truncate">@{user.username}</div>
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              <span className="text-xs font-bold bg-white/25 rounded-full px-2 py-0.5">{user.level || 'A1'}</span>
+              <span className="text-xs font-semibold bg-white/15 rounded-full px-2 py-0.5">{user.role === 'admin' ? 'Admin' : 'Student'}</span>
             </div>
+            {bio && <div className="text-white/80 text-xs italic mt-1.5 line-clamp-2">{bio}</div>}
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-3 mt-4">
+        <div className="grid grid-cols-3 gap-3 mt-5">
           {[
-            { Icon: Star,         val: totalXP,   label: 'Total XP',  color: 'text-yellow-600 dark:text-yellow-400' },
-            { Icon: Flame,        val: streak,    label: 'Streak',    color: 'text-orange-500 dark:text-orange-400' },
-            { Icon: CheckCircle2, val: completed, label: 'Completed', color: 'text-green-600 dark:text-green-400'   },
+            { Icon: Star,         val: totalXP,   label: 'Total XP'  },
+            { Icon: Flame,        val: streak,    label: 'Streak'    },
+            { Icon: CheckCircle2, val: completed, label: 'Completed' },
           ].map(s => (
-            <div key={s.label} className="text-center">
-              <div className={`text-xl font-bold ${s.color}`}>{s.val}</div>
-              <div className="text-gray-500 dark:text-gray-400 text-xs">{s.label}</div>
+            <div key={s.label} className="text-center rounded-xl bg-white/15 py-2">
+              <div className="text-xl font-bold flex items-center justify-center gap-1"><s.Icon size={15} /> {s.val}</div>
+              <div className="text-white/80 text-xs">{s.label}</div>
             </div>
           ))}
         </div>
-        <div className="mt-3">
-          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+        <div className="mt-4">
+          <div className="flex justify-between text-xs text-white/80 mb-1">
             <span>Level Progress</span>
-            <span className="text-yellow-600 dark:text-yellow-400 font-medium">{totalXP} / 1000 XP</span>
+            <span className="font-medium text-white">{totalXP} / 1000 XP</span>
           </div>
-          <ProgressBar value={totalXP} max={1000} />
+          <div className="h-2 rounded-full bg-white/25 overflow-hidden">
+            <div className="h-full bg-yellow-300 rounded-full transition-all" style={{ width: `${Math.min(100, (totalXP / 1000) * 100)}%` }} />
+          </div>
         </div>
+      </div>
+
+      {/* Account information */}
+      <div className="card space-y-3">
+        <h2 className="text-gray-900 dark:text-white font-bold flex items-center gap-2"><User size={17} /> Account information</h2>
+        <dl className="divide-y divide-gray-100 dark:divide-gray-800 text-sm">
+          {[
+            ['Email', user.email],
+            ['Username', `@${user.username}`],
+            ['Role', user.role === 'admin' ? 'Administrator' : 'Student'],
+            ['Current level', user.level || 'A1'],
+            ['Member since', memberSince || '—'],
+          ].map(([k, v]) => (
+            <div key={k} className="flex justify-between gap-4 py-2">
+              <dt className="text-gray-500 dark:text-gray-400">{k}</dt>
+              <dd className="text-gray-900 dark:text-white font-medium truncate">{v}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
 
       {/* Edit profile */}
@@ -203,16 +229,6 @@ export default function ProfilePage() {
         <button className="btn-secondary flex items-center gap-2" onClick={handleChangePassword} disabled={pwLoading}>
           <KeyRound size={15} /> {pwLoading ? 'Updating...' : 'Change Password'}
         </button>
-      </div>
-
-      {/* Account info */}
-      <div className="card space-y-2">
-        <h2 className="text-gray-900 dark:text-white font-bold text-sm">Account Info</h2>
-        <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1.5">
-          <div className="flex justify-between"><span>Email</span><span className="text-gray-700 dark:text-gray-300">{user.email}</span></div>
-          <div className="flex justify-between"><span>Role</span><span className="text-gray-700 dark:text-gray-300 capitalize">{user.role}</span></div>
-          <div className="flex justify-between"><span>Member since</span><span className="text-gray-700 dark:text-gray-300">{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}</span></div>
-        </div>
       </div>
 
       {/* Sign out */}

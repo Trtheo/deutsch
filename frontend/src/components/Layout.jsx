@@ -8,7 +8,7 @@ import SearchModal from './SearchModal';
 import {
   Home, BarChart2, Brain, FolderOpen, Type, BookOpen, Hash,
   FileText, Zap, BookMarked, PenLine, Headphones, Mic, Clock,
-  Sun, Moon, Flame, Star, LogOut, BookOpenCheck, WifiOff, Layers, Bell, BellOff, ShieldCheck, MessageSquare, X, Search, Languages
+  Sun, Moon, Flame, Star, LogOut, BookOpenCheck, WifiOff, Layers, Bell, BellOff, ShieldCheck, MessageSquare, X, Search, Languages, UserCog
 } from 'lucide-react';
 import { isSupported, requestPermission, scheduleDailyReminder, cancelDailyReminder, getNotifSettings } from '../notifications';
 
@@ -71,6 +71,7 @@ export default function Layout({ children }) {
   const { pathname } = useLocation();
   const { totalXP, streak, darkMode, setDarkMode, isOnline } = useApp();
   const { user, logout } = useAuth();
+  const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.username;
 
   const openContact = () => {
     setContactForm({ name: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || user?.username || '', email: user?.email || '', type: 'Support', message: '' });
@@ -251,18 +252,28 @@ export default function Layout({ children }) {
           className="w-full flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 hover:text-yellow-600 dark:hover:text-yellow-400 transition-colors py-1">
           <MessageSquare size={13} /> Contact / Feedback
         </button>
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="text-gray-900 dark:text-white text-xs font-semibold truncate">{user?.username}</div>
-            <div className="text-gray-500 dark:text-gray-400 text-xs">
-              Level <span className="font-bold text-yellow-600 dark:text-yellow-400">{user?.level || 'A1'}</span> · {user?.role === 'admin' ? <span className="text-purple-500 font-semibold">Admin</span> : 'Student'}
-            </div>
-          </div>
-          <button onClick={logout}
-            className="text-xs text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0 flex items-center gap-1">
-            <LogOut size={13} /> Logout
-          </button>
-        </div>
+        {/* Account card: opens profile management */}
+        <Link to="/profile" onClick={() => setSidebarOpen(false)}
+          aria-label="Open my profile"
+          className={`group flex items-center gap-3 rounded-2xl p-3 bg-gradient-to-br from-blue-600 to-emerald-500 text-white shadow-md
+            hover:shadow-lg hover:brightness-110 transition-all ${pathname === '/profile' ? 'ring-2 ring-yellow-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : ''}`}>
+          <span className="w-10 h-10 rounded-full bg-white/20 ring-2 ring-white/40 flex items-center justify-center text-xl flex-shrink-0">
+            {user?.avatar || '🧑'}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-bold truncate">{displayName}</span>
+            <span className="block text-xs text-white/80 truncate">@{user?.username}</span>
+            <span className="flex items-center gap-1.5 mt-1">
+              <span className="text-[10px] font-bold bg-white/25 rounded-full px-2 py-0.5">{user?.level || 'A1'}</span>
+              <span className="text-[10px] font-semibold bg-white/15 rounded-full px-2 py-0.5">{user?.role === 'admin' ? 'Admin' : 'Student'}</span>
+            </span>
+          </span>
+          <UserCog size={18} className="text-white/80 group-hover:text-white flex-shrink-0" />
+        </Link>
+        <button onClick={logout}
+          className="w-full text-xs text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex items-center justify-center gap-1 py-1">
+          <LogOut size={13} /> Logout
+        </button>
       </div>
 
       {/* Footer progress */}
@@ -329,6 +340,10 @@ export default function Layout({ children }) {
             </button>
             <span className="flex items-center gap-1 text-xs bg-orange-100 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 px-2 py-1 rounded-full"><Flame size={11} /> {streak}</span>
             <span className="flex items-center gap-1 text-xs bg-yellow-100 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 px-2 py-1 rounded-full"><Star size={11} /> {totalXP}</span>
+            <Link to="/profile" aria-label="Open my profile" title={displayName}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-base bg-gradient-to-br from-blue-600 to-emerald-500 ring-2 ring-white dark:ring-gray-900 shadow">
+              {user?.avatar || '🧑'}
+            </Link>
             <button
               onClick={() => setDarkMode(d => !d)}
               className="w-8 h-8 rounded-xl flex items-center justify-center
@@ -349,11 +364,8 @@ export default function Layout({ children }) {
               <span>You are offline — lessons still work. Progress will sync when you reconnect.</span>
             </div>
           )}
-          {/* Extra bottom clearance on mobile so content clears the fixed bottom nav */}
-          <div className="lg:hidden" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 72px)' }}>
-            {children}
-          </div>
-          <div className="hidden lg:block">{children}</div>
+          {/* Rendered once; on mobile the padding keeps content clear of the fixed bottom nav */}
+          <div className="bottom-nav-clearance">{children}</div>
         </main>
       </div>
 

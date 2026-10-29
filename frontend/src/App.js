@@ -13,6 +13,7 @@ import AdminPage from './pages/AdminPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import TranslatorPage from './pages/TranslatorPage';
+import ProfilePage from './pages/ProfilePage';
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route path="/translate" element={<TranslatorPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
             </Routes>
           </Layout>
         </AppProvider>

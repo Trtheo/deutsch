@@ -191,3 +191,7 @@
     @apply text-[10px] font-semibold leading-none;
   }
 }
+
+/* Space below page content so the fixed mobile bottom nav doesn't cover it */
+.bottom-nav-clearance { padding-bottom: calc(env(safe-area-inset-bottom) + 72px); }
+@media (min-width: 1024px) { .bottom-nav-clearance { padding-bottom: 0; } }
