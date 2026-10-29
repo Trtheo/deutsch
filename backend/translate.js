@@ -1,7 +1,6 @@
-// English ⇄ German translation. Tries the configured providers best-first and falls back on failure:
-//   DEEPL_API_KEY → DeepL (best German quality; free plan: 500k characters/month)
-//   OPENAI_API_KEY → OpenAI
-//   otherwise     → MyMemory (free, no key, lower daily limit)
+// English ⇄ German translation with dedicated translation services only (no AI chat models):
+//   DEEPL_API_KEY set → DeepL (best German quality; free plan: 500k characters/month)
+//   always            → MyMemory (free, no key, lower daily limit), also the fallback if DeepL fails
 const LANGS = { en: 'English', de: 'German' };
 const MAX_CHARS = 2000;
 const TIMEOUT_MS = 15000;
@@ -24,18 +23,6 @@ async function deepl(text, from, to) {
   if (!res.ok) throw new TranslateError(`DeepL error ${res.status}`);
   const data = await res.json();
   return data.translations?.[0]?.text;
-}
-
-async function openai(text, from, to, client) {
-  const completion = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
-    temperature: 0.2,
-    messages: [
-      { role: 'system', content: `You are a professional translator. Translate the user's ${LANGS[from]} text into natural, correct ${LANGS[to]}. Keep the meaning, tone and line breaks. Reply with the translation only.` },
-      { role: 'user', content: text },
-    ],
-  });
-  return completion.choices[0]?.message?.content?.trim();
 }
 
 // MyMemory accepts about 500 bytes per request, so long text is sent sentence by sentence
@@ -67,7 +54,7 @@ async function mymemory(text, from, to) {
   return parts.join('').trim();
 }
 
-async function translate({ text, from = 'en', to = 'de', openaiClient = null }) {
+async function translate({ text, from = 'en', to = 'de' }) {
   text = String(text ?? '').trim();
   if (!text) throw new TranslateError('Please enter some text to translate.');
   if (text.length > MAX_CHARS) throw new TranslateError(`Text is too long (max ${MAX_CHARS} characters).`);
@@ -76,10 +63,9 @@ async function translate({ text, from = 'en', to = 'de', openaiClient = null }) 
   const key = `${from}|${to}|${text}`;
   if (cache.has(key)) return { translation: cache.get(key), provider: 'cache' };
 
-  // Try the configured providers best-first; if one fails (bad key, no credit, outage), use the next
+  // DeepL first when configured; if it fails (bad key, quota, outage), the free service takes over
   const providers = [];
   if (process.env.DEEPL_API_KEY) providers.push(['deepl', () => deepl(text, from, to)]);
-  if (process.env.OPENAI_API_KEY && openaiClient) providers.push(['openai', () => openai(text, from, to, openaiClient)]);
   providers.push(['mymemory', () => mymemory(text, from, to)]);
 
   let lastError;

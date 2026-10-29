@@ -645,7 +645,7 @@ const translateLimiter = rateLimit({
 app.post('/api/translate', authMiddleware, translateLimiter, async (req, res) => {
   try {
     const { text, from = 'en', to = 'de' } = req.body;
-    res.json(await translate({ text, from, to, openaiClient: openai }));
+    res.json(await translate({ text, from, to }));
   } catch (err) {
     if (err instanceof TranslateError) return res.status(400).json({ error: err.message });
     console.error('Translation failed:', err.message);
