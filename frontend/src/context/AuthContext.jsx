@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { Eye, EyeOff, Sun, Moon } from 'lucide-react';
-import { register as apiRegister, login as apiLogin, updateProfile, updatePassword, forgotPassword, checkUsername } from '../api';
+import { useLocation } from 'react-router-dom';
+import { Eye, EyeOff, Sun, Moon, MailCheck } from 'lucide-react';
+import { register as apiRegister, login as apiLogin, updateProfile, updatePassword, forgotPassword, checkUsername, resendVerification } from '../api';
+import VerifyEmailPage from '../pages/VerifyEmailPage';
+import ResetPasswordPage from '../pages/ResetPasswordPage';
 
 const AuthContext = createContext();
 const TOKEN_KEY = 'deutsch_token';
@@ -23,6 +26,9 @@ function AuthScreen({ onDone }) {
   const debounceRef = useRef(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');       // shown on the check-your-inbox screen
+  const [unverifiedEmail, setUnverifiedEmail] = useState(''); // login refused until verified
+  const [resendState, setResendState] = useState('');         // '' | sending | sent | failed
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [dark, setDark] = useState(() => localStorage.getItem('theme') !== 'light');
@@ -33,7 +39,7 @@ function AuthScreen({ onDone }) {
   }, [dark]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const switchMode = (m) => { setMode(m); setError(''); setSuccess(''); setUsernameCustomized(false); setUsernameStatus(null); };
+  const switchMode = (m) => { setMode(m); setError(''); setSuccess(''); setUnverifiedEmail(''); setResendState(''); setUsernameCustomized(false); setUsernameStatus(null); };
 
   // Debounced username availability check
   const checkAvailability = (username) => {
@@ -95,16 +101,36 @@ function AuthScreen({ onDone }) {
     if (mode === 'register' && usernameStatus === 'checking') return setError('Please wait while we check username availability.');
     if (mode === 'register' && form.password.length < 6) return setError('Password must be at least 6 characters.');
     setLoading(true);
+    setUnverifiedEmail('');
     try {
       const fn = mode === 'register' ? apiRegister : apiLogin;
       const res = await fn(form);
+      if (res.data.verificationRequired) {
+        // No session yet: the account is activated from the link in the email
+        setPendingEmail(res.data.email);
+        setResendState(res.data.emailSent ? '' : 'failed');
+        setMode('check-email');
+        return;
+      }
       localStorage.setItem(TOKEN_KEY, res.data.token);
       localStorage.setItem(USER_KEY, JSON.stringify(res.data.user));
       setSuccess(mode === 'register' ? 'Account created! Welcome 🎉' : 'Welcome back! Signing you in...');
       setTimeout(() => onDone(res.data.user), 800);
     } catch (e) {
       setError(e.response?.data?.error || 'Something went wrong. Try again.');
+      if (e.response?.data?.code === 'EMAIL_NOT_VERIFIED') setUnverifiedEmail(e.response.data.email || form.email);
     } finally { setLoading(false); }
+  };
+
+  const handleResend = async (email) => {
+    setResendState('sending');
+    try {
+      await resendVerification({ email });
+      setResendState('sent');
+    } catch (e) {
+      setResendState('failed');
+      setError(e.response?.data?.error || 'Could not send the email. Please try again later.');
+    }
   };
 
   return (
@@ -138,7 +164,31 @@ function AuthScreen({ onDone }) {
           </div>
         )}
 
-        <div className="card space-y-4">
+        {/* After registering: check your inbox */}
+        {mode === 'check-email' && (
+          <div className="card text-center space-y-4 py-8">
+            <MailCheck size={44} className="mx-auto text-yellow-500" />
+            <div>
+              <h2 className="text-gray-900 dark:text-white font-bold text-lg">Check your inbox</h2>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">
+                We sent a verification link to <strong className="text-gray-800 dark:text-gray-200">{pendingEmail}</strong>.
+                Click it to activate your account. You’ll be signed in automatically.
+              </p>
+            </div>
+            <p className="text-gray-400 dark:text-gray-500 text-xs">Nothing there? Check your spam folder. The link is valid for 24 hours.</p>
+            {resendState === 'sent'
+              ? <p className="text-green-600 dark:text-green-400 text-sm">A new link is on its way.</p>
+              : <button className="btn-primary w-full" onClick={() => handleResend(pendingEmail)} disabled={resendState === 'sending'}>
+                  {resendState === 'sending' ? 'Sending…' : resendState === 'failed' ? 'Try sending the email again' : 'Resend email'}
+                </button>}
+            <button type="button" onClick={() => switchMode('login')}
+              className="w-full text-center text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+              ← Back to Sign In
+            </button>
+          </div>
+        )}
+
+        {mode !== 'check-email' && <div className="card space-y-4">
 
           {/* Forgot password — email step */}
           {mode === 'forgot' && (
@@ -245,6 +295,13 @@ function AuthScreen({ onDone }) {
               <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
             </div>
           )}
+          {mode === 'login' && unverifiedEmail && (
+            resendState === 'sent'
+              ? <p className="text-green-600 dark:text-green-400 text-sm text-center">A new verification link is on its way to {unverifiedEmail}.</p>
+              : <button type="button" className="btn-secondary w-full" onClick={() => handleResend(unverifiedEmail)} disabled={resendState === 'sending'}>
+                  {resendState === 'sending' ? 'Sending…' : 'Resend verification email'}
+                </button>
+          )}
           {success && (
             <div className="flex items-center gap-2 bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/30 rounded-xl px-3 py-2.5">
               <span className="text-green-500 text-base">✓</span>
@@ -265,7 +322,7 @@ function AuthScreen({ onDone }) {
               ← Back to Sign In
             </button>
           )}
-        </div>
+        </div>}
 
         <p className="text-center text-gray-400 dark:text-gray-600 text-xs">
           Your progress is saved to your account
@@ -277,6 +334,7 @@ function AuthScreen({ onDone }) {
 
 // ── Provider ───────────────────────────────────────────────
 export function AuthProvider({ children }) {
+  const { pathname } = useLocation();
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); }
     catch { return null; }
@@ -300,7 +358,12 @@ export function AuthProvider({ children }) {
     await updatePassword(data);
   }, []);
 
-  if (!user) return <AuthScreen onDone={setUser} />;
+  if (!user) {
+    // Links from emails must work without being logged in
+    if (pathname === '/verify-email') return <VerifyEmailPage onVerified={setUser} />;
+    if (pathname === '/reset-password') return <ResetPasswordPage />;
+    return <AuthScreen onDone={setUser} />;
+  }
 
   return (
     <AuthContext.Provider value={{ user, logout, saveProfile, savePassword }}>

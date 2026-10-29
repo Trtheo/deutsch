@@ -8,11 +8,12 @@ const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
 const { Lesson, Exam, Progress, User, Contact, Comment } = require('./models');
 const { seedDatabase } = require('./seed');
 const { buildFallbackLesson, buildFallbackExam } = require('./fallback');
 const { hasExamBank, buildExamFromBank } = require('./examBank');
+const mailer = require('./mailer');
+const emails = require('./emails');
 
 const app = express();
 // Behind a reverse proxy (e.g. nginx in Docker) set TRUST_PROXY=1 so rate limiting sees real client IPs
@@ -81,6 +82,43 @@ function authMiddleware(req, res, next) {
   }
 }
 
+// ── Auth helpers ──────────────────────────────────────────
+const VERIFY_LINK_HOURS = 24;
+// Never send these to any client, not even to admins
+const PRIVATE_USER_FIELDS = '-password -resetToken -resetTokenExpiry -verifyTokenHash -verifyTokenExpiry';
+
+const publicUser = u => ({ id: u._id, firstName: u.firstName, lastName: u.lastName, username: u.username, email: u.email, level: u.level, avatar: u.avatar, bio: u.bio, role: u.role });
+const sessionFor = u => ({ token: jwt.sign({ id: u._id, username: u.username, role: u.role }, JWT_SECRET, { expiresIn: '30d' }), user: publicUser(u) });
+const displayName = u => u.firstName || u.username;
+const hashToken = t => crypto.createHash('sha256').update(String(t)).digest('hex');
+
+// Puts a fresh single-use token on the user (save it afterwards) and returns the link for the email
+function issueVerifyLink(user) {
+  const token = crypto.randomBytes(32).toString('hex');
+  user.verifyTokenHash = hashToken(token);
+  user.verifyTokenExpiry = new Date(Date.now() + VERIFY_LINK_HOURS * 60 * 60 * 1000);
+  return `${emails.appUrl()}/verify-email?token=${token}&email=${encodeURIComponent(user.email)}`;
+}
+
+async function sendVerificationEmail(user, link) {
+  try {
+    await mailer.sendMail({ to: user.email, ...emails.verifyEmail({ name: displayName(user), link, hours: VERIFY_LINK_HOURS }) });
+    return true;
+  } catch (err) {
+    console.error('Verification email failed:', err.message);
+    return false;
+  }
+}
+
+// Resending emails: 5 per 15 minutes per IP
+const resendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many emails requested. Please wait a few minutes.' },
+});
+
 // ── Auth routes ───────────────────────────────────────────
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -90,9 +128,26 @@ app.post('/api/auth/register', async (req, res) => {
     const exists = await User.findOne({ $or: [{ email }, { username }] });
     if (exists) return res.status(409).json({ error: exists.email === email ? 'Email already registered' : 'Username already taken' });
     const hash = await bcrypt.hash(password, 10);
-    const user = await User.create({ firstName, lastName, username, email, password: hash, level });
-    const token = jwt.sign({ id: user._id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, user: { id: user._id, firstName: user.firstName, lastName: user.lastName, username: user.username, email: user.email, level: user.level, avatar: user.avatar, bio: user.bio, role: user.role } });
+
+    // Without email configured (local dev), accounts are verified right away so sign-up still works
+    if (!mailer.isConfigured()) {
+      const user = await User.create({ firstName, lastName, username, email, password: hash, level, emailVerified: true });
+      console.warn('⚠️  Email not configured: account verified without an email');
+      return res.status(201).json(sessionFor(user));
+    }
+
+    const user = new User({ firstName, lastName, username, email, password: hash, level, emailVerified: false });
+    const link = issueVerifyLink(user);
+    await user.save();
+    const emailSent = await sendVerificationEmail(user, link);
+    res.status(201).json({
+      verificationRequired: true,
+      email: user.email,
+      emailSent,
+      message: emailSent
+        ? 'Account created! Check your inbox to verify your email.'
+        : 'Account created, but we could not send the verification email. Use "Resend email" to try again.',
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -104,17 +159,56 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Invalid email or password' });
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
-    const token = jwt.sign({ id: user._id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, user: { id: user._id, firstName: user.firstName, lastName: user.lastName, username: user.username, email: user.email, level: user.level, avatar: user.avatar, bio: user.bio, role: user.role } });
+    // Accounts created before verification existed have no emailVerified field and count as verified
+    if (user.emailVerified === false) {
+      return res.status(403).json({ code: 'EMAIL_NOT_VERIFIED', email: user.email, error: 'Please verify your email first. Check your inbox for the link.' });
+    }
+    res.json(sessionFor(user));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Email verification ────────────────────────────────────
+// The link logs the user in directly, so it is single-use, expires, and only its hash is stored
+app.post('/api/auth/verify-email', async (req, res) => {
+  try {
+    const { email, token } = req.body;
+    if (!email || !token) return res.status(400).json({ error: 'Invalid verification link.' });
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ error: 'Invalid verification link.' });
+    if (user.emailVerified !== false && !user.verifyTokenHash) {
+      return res.status(400).json({ code: 'ALREADY_VERIFIED', error: 'This email is already verified. Please sign in.' });
+    }
+    const matches = user.verifyTokenHash && crypto.timingSafeEqual(Buffer.from(user.verifyTokenHash), Buffer.from(hashToken(token)));
+    if (!matches) return res.status(400).json({ code: 'INVALID_LINK', error: 'This verification link is invalid or was already used. Request a new one.' });
+    if (user.verifyTokenExpiry < new Date()) return res.status(400).json({ code: 'LINK_EXPIRED', error: 'This verification link has expired. Request a new one.' });
+
+    user.emailVerified = true;
+    user.verifyTokenHash = null;
+    user.verifyTokenExpiry = null;
+    await user.save();
+
+    const welcomeMail = emails.welcome({ name: displayName(user) });
+    mailer.sendMail({ to: user.email, ...welcomeMail }).catch(err => console.error('Welcome email failed:', err.message));
+    res.json(sessionFor(user));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Always answers the same way, so it can't be used to find out which emails are registered
+app.post('/api/auth/resend-verification', resendLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const user = await User.findOne({ email });
+    if (user && user.emailVerified === false && mailer.isConfigured()) {
+      const link = issueVerifyLink(user);
+      await user.save();
+      await sendVerificationEmail(user, link);
+    }
+    res.json({ message: 'If that account still needs verifying, a new email is on its way.' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ── Forgot / Reset password ───────────────────────────────
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-});
-
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -125,21 +219,8 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     user.resetToken = token;
     user.resetTokenExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30 min
     await user.save();
-    const appUrl = (process.env.APP_URL || '').replace(/\/+$/, ''); // tolerate a trailing slash
-    const resetLink = `${appUrl}/reset-password?token=${token}&email=${encodeURIComponent(email)}`;
-    await transporter.sendMail({
-      from: `"Deutsch Lernen" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Reset your Deutsch Lernen password',
-      html: `
-        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;border:1px solid #e5e7eb;border-radius:12px">
-          <h2 style="color:#111827">Reset your password</h2>
-          <p style="color:#6b7280">Hi ${user.firstName || user.username},</p>
-          <p style="color:#6b7280">Click the button below to reset your password. This link expires in <strong>30 minutes</strong>.</p>
-          <a href="${resetLink}" style="display:inline-block;margin:24px 0;padding:12px 28px;background:#facc15;color:#111827;font-weight:700;border-radius:10px;text-decoration:none">Reset Password</a>
-          <p style="color:#9ca3af;font-size:12px">If you didn't request this, you can safely ignore this email.</p>
-        </div>`,
-    });
+    const resetLink = `${emails.appUrl()}/reset-password?token=${token}&email=${encodeURIComponent(user.email)}`;
+    await mailer.sendMail({ to: user.email, ...emails.resetPassword({ name: displayName(user), link: resetLink, minutes: 30 }) });
     console.log(`📧 Reset link sent to ${email}`);
     res.json({ message: 'Password reset link sent to your email.' });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -162,7 +243,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
 
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    const user = await User.findById(req.user.id).select(PRIVATE_USER_FIELDS);
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -182,7 +263,7 @@ app.put('/api/auth/profile', authMiddleware, async (req, res) => {
     if (level) update.level = level;
     if (avatar) update.avatar = avatar;
     if (bio !== undefined) update.bio = bio;
-    const user = await User.findByIdAndUpdate(req.user.id, update, { returnDocument: 'after' }).select('-password');
+    const user = await User.findByIdAndUpdate(req.user.id, update, { returnDocument: 'after' }).select(PRIVATE_USER_FIELDS);
     res.json(user);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -229,16 +310,16 @@ app.post('/api/contact', async (req, res) => {
     // Save to DB
     await Contact.create({ name, email, type: type || 'General', message });
     // Send email
-    await transporter.sendMail({
-      from: `"Deutsch Lernen" <${process.env.EMAIL_USER}>`,
+    const esc = emails.escapeHtml;
+    await mailer.sendMail({
       to: process.env.EMAIL_USER,
       replyTo: email,
       subject: `[${type || 'General'}] Message from ${name}`,
       html: `
         <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px;border:1px solid #e5e7eb;border-radius:12px">
-          <h2 style="color:#111827;margin-bottom:4px">${type || 'Message'}</h2>
-          <p style="color:#6b7280;margin:0 0 20px">From: <strong>${name}</strong> &lt;${email}&gt;</p>
-          <div style="background:#f9fafb;border-radius:8px;padding:16px;color:#374151;white-space:pre-wrap">${message}</div>
+          <h2 style="color:#111827;margin-bottom:4px">${esc(type || 'Message')}</h2>
+          <p style="color:#6b7280;margin:0 0 20px">From: <strong>${esc(name)}</strong> &lt;${esc(email)}&gt;</p>
+          <div style="background:#f9fafb;border-radius:8px;padding:16px;color:#374151;white-space:pre-wrap">${esc(message)}</div>
         </div>`,
     });
     res.json({ message: 'Message sent successfully!' });
@@ -276,16 +357,16 @@ app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, async (req, re
     const filter = userIds?.length ? { _id: { $in: userIds } } : {};
     const users = await User.find(filter).select('email firstName username');
     if (!users.length) return res.status(400).json({ error: 'No recipients found' });
+    const esc = emails.escapeHtml;
     const results = await Promise.allSettled(users.map(u =>
-      transporter.sendMail({
-        from: `"Deutsch Lernen" <${process.env.EMAIL_USER}>`,
+      mailer.sendMail({
         to: u.email,
         subject,
         html: `
           <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px;border:1px solid #e5e7eb;border-radius:12px">
-            <h2 style="color:#111827;margin-bottom:4px">${subject}</h2>
-            <p style="color:#6b7280">Hi ${u.firstName || u.username},</p>
-            <div style="color:#374151;white-space:pre-wrap;margin:16px 0">${message}</div>
+            <h2 style="color:#111827;margin-bottom:4px">${esc(subject)}</h2>
+            <p style="color:#6b7280">Hi ${esc(u.firstName || u.username)},</p>
+            <div style="color:#374151;white-space:pre-wrap;margin:16px 0">${esc(message)}</div>
             <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0" />
             <p style="color:#9ca3af;font-size:12px">You received this because you are registered on Deutsch Lernen.</p>
           </div>`,
@@ -300,7 +381,7 @@ app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, async (req, re
 // ── Admin routes ──────────────────────────────────────────
 app.get('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    const users = await User.find().select(PRIVATE_USER_FIELDS).sort({ createdAt: -1 });
     res.json(users);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -310,7 +391,7 @@ app.put('/api/admin/users/:id/role', authMiddleware, adminMiddleware, async (req
     const { role } = req.body;
     if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
     if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot change your own role' });
-    const user = await User.findByIdAndUpdate(req.params.id, { role }, { returnDocument: 'after' }).select('-password');
+    const user = await User.findByIdAndUpdate(req.params.id, { role }, { returnDocument: 'after' }).select(PRIVATE_USER_FIELDS);
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (err) { res.status(500).json({ error: err.message }); }

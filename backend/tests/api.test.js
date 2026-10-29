@@ -7,9 +7,21 @@ const request = require('supertest');
 
 process.env.JWT_SECRET = 'test-secret';
 process.env.MONGODB_URI = 'mongodb://placeholder'; // replaced by the in-memory server below
+process.env.APP_URL = 'https://app.example.com';
 delete process.env.OPENAI_API_KEY;                 // force template fallbacks, never call OpenAI
 
 let mongod, app, User, Lesson, Exam, Progress;
+
+// Capture outgoing emails instead of sending them
+const mailer = require('../mailer');
+const sentMail = [];
+mailer.isConfigured = () => true;
+mailer.sendMail = async msg => { sentMail.push(msg); };
+const lastMailTo = email => [...sentMail].reverse().find(m => m.to === email);
+const verifyParams = mail => {
+  const m = mail.text.match(/verify-email\?token=([a-f0-9]+)&email=(\S+)/);
+  return { token: m[1], email: decodeURIComponent(m[2]) };
+};
 
 before(async () => {
   mongod = await MongoMemoryServer.create({ instance: { launchTimeout: 60000 } }); // first start can be slow (antivirus scans)
@@ -25,14 +37,18 @@ after(async () => {
 });
 
 beforeEach(async () => {
+  sentMail.length = 0;
   await Promise.all(Object.values(mongoose.connection.collections).map(c => c.deleteMany({})));
 });
 
+// Registers and verifies through the emailed link, like a real user. Returns { token, user }.
 async function registerUser(overrides = {}) {
   const body = { username: 'anna', email: 'anna@example.com', password: 'secret123', ...overrides };
   const res = await request(app).post('/api/auth/register').send(body);
-  assert.equal(res.status, 200, JSON.stringify(res.body));
-  return res.body;
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const verified = await request(app).post('/api/auth/verify-email').send(verifyParams(lastMailTo(body.email)));
+  assert.equal(verified.status, 200, JSON.stringify(verified.body));
+  return verified.body;
 }
 
 async function makeAdmin(user) {
@@ -53,7 +69,7 @@ describe('health', () => {
 });
 
 describe('auth', () => {
-  test('register returns a token and never the password', async () => {
+  test('verifying returns a session and never the password', async () => {
     const { token, user } = await registerUser();
     assert.ok(token);
     assert.equal(user.username, 'anna');
@@ -85,6 +101,107 @@ describe('auth', () => {
     const res = await request(app).get('/api/auth/me').set(auth('not-a-real-token'));
     assert.equal(res.status, 401);
     assert.equal(res.body.error, 'Invalid token');
+  });
+});
+
+describe('email verification', () => {
+  const anna = { username: 'anna', email: 'anna@example.com', password: 'secret123', firstName: 'Anna' };
+
+  test('register sends a verification email instead of logging in', async () => {
+    const res = await request(app).post('/api/auth/register').send(anna);
+    assert.equal(res.status, 201);
+    assert.equal(res.body.verificationRequired, true);
+    assert.equal(res.body.emailSent, true);
+    assert.equal(res.body.token, undefined);
+    const mail = lastMailTo(anna.email);
+    assert.match(mail.subject, /Confirm your email/);
+    assert.match(mail.html, /https:\/\/app\.example\.com\/verify-email\?token=[a-f0-9]{64}&amp;email=|https:\/\/app\.example\.com\/verify-email\?token=[a-f0-9]{64}&email=/);
+    assert.match(mail.html, /Willkommen, Anna!/);
+    const stored = await User.findOne({ email: anna.email });
+    assert.equal(stored.emailVerified, false);
+    assert.notEqual(stored.verifyTokenHash, verifyParams(mail).token, 'only a hash of the token is stored');
+  });
+
+  test('login is refused until the email is verified', async () => {
+    await request(app).post('/api/auth/register').send(anna);
+    const res = await request(app).post('/api/auth/login').send({ email: anna.email, password: anna.password });
+    assert.equal(res.status, 403);
+    assert.equal(res.body.code, 'EMAIL_NOT_VERIFIED');
+  });
+
+  test('the link verifies, signs the user in and sends a welcome email', async () => {
+    await request(app).post('/api/auth/register').send(anna);
+    const res = await request(app).post('/api/auth/verify-email').send(verifyParams(lastMailTo(anna.email)));
+    assert.equal(res.status, 200);
+    assert.ok(res.body.token);
+    assert.equal(res.body.user.email, anna.email);
+    const me = await request(app).get('/api/auth/me').set(auth(res.body.token));
+    assert.equal(me.status, 200);
+    assert.equal(me.body.verifyTokenHash, undefined);
+    await new Promise(r => setImmediate(r)); // welcome email is sent without blocking the response
+    assert.match(lastMailTo(anna.email).subject, /account is ready/);
+    const login = await request(app).post('/api/auth/login').send({ email: anna.email, password: anna.password });
+    assert.equal(login.status, 200);
+  });
+
+  test('a link works only once', async () => {
+    await request(app).post('/api/auth/register').send(anna);
+    const params = verifyParams(lastMailTo(anna.email));
+    assert.equal((await request(app).post('/api/auth/verify-email').send(params)).status, 200);
+    const again = await request(app).post('/api/auth/verify-email').send(params);
+    assert.equal(again.status, 400);
+    assert.equal(again.body.code, 'ALREADY_VERIFIED');
+  });
+
+  test('wrong and expired tokens are rejected', async () => {
+    await request(app).post('/api/auth/register').send(anna);
+    const params = verifyParams(lastMailTo(anna.email));
+    let res = await request(app).post('/api/auth/verify-email').send({ ...params, token: 'f'.repeat(64) });
+    assert.equal(res.body.code, 'INVALID_LINK');
+    await User.updateOne({ email: anna.email }, { verifyTokenExpiry: new Date(Date.now() - 1000) });
+    res = await request(app).post('/api/auth/verify-email').send(params);
+    assert.equal(res.body.code, 'LINK_EXPIRED');
+  });
+
+  test('resending replaces the old link', async () => {
+    await request(app).post('/api/auth/register').send(anna);
+    const oldParams = verifyParams(lastMailTo(anna.email));
+    const res = await request(app).post('/api/auth/resend-verification').send({ email: anna.email });
+    assert.equal(res.status, 200);
+    const newParams = verifyParams(lastMailTo(anna.email));
+    assert.notEqual(newParams.token, oldParams.token);
+    assert.equal((await request(app).post('/api/auth/verify-email').send(oldParams)).body.code, 'INVALID_LINK');
+    assert.equal((await request(app).post('/api/auth/verify-email').send(newParams)).status, 200);
+  });
+
+  test('resend gives the same answer for unknown emails', async () => {
+    const res = await request(app).post('/api/auth/resend-verification').send({ email: 'nobody@example.com' });
+    assert.equal(res.status, 200);
+    assert.equal(sentMail.length, 0);
+  });
+
+  test('accounts created before verification existed can still log in', async () => {
+    const bcrypt = require('bcryptjs');
+    await User.collection.insertOne({ username: 'legacy', email: 'legacy@example.com', password: await bcrypt.hash('secret123', 10), role: 'user' });
+    const res = await request(app).post('/api/auth/login').send({ email: 'legacy@example.com', password: 'secret123' });
+    assert.equal(res.status, 200);
+  });
+
+  test('without email configured, new accounts are verified straight away', async () => {
+    mailer.isConfigured = () => false;
+    try {
+      const res = await request(app).post('/api/auth/register').send(anna);
+      assert.equal(res.status, 201);
+      assert.ok(res.body.token);
+      assert.equal(sentMail.length, 0);
+    } finally {
+      mailer.isConfigured = () => true;
+    }
+  });
+
+  test('user input in the email is escaped', async () => {
+    await request(app).post('/api/auth/register').send({ ...anna, firstName: '<b>x</b>' });
+    assert.doesNotMatch(lastMailTo(anna.email).html, /<b>x<\/b>/);
   });
 });
 

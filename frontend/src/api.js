@@ -17,7 +17,8 @@ api.interceptors.request.use(config => {
 // Expired or invalid session: clear it and reload so the login screen shows
 api.interceptors.response.use(undefined, error => {
   const msg = error.response?.data?.error;
-  if (error.response?.status === 401 && (msg === 'No token' || msg === 'Invalid token')) {
+  // Only when a session existed: on public pages (verify email, reset password) there is nothing to clear
+  if (error.response?.status === 401 && (msg === 'No token' || msg === 'Invalid token') && localStorage.getItem('deutsch_token')) {
     localStorage.removeItem('deutsch_token');
     localStorage.removeItem('deutsch_user');
     window.location.reload();
@@ -33,6 +34,8 @@ export const updateProfile  = (data) => api.put('/auth/profile', data);
 export const updatePassword = (data) => api.put('/auth/password', data);
 export const forgotPassword = (data) => api.post('/auth/forgot-password', data);
 export const resetPassword  = (data) => api.post('/auth/reset-password', data);
+export const verifyEmail    = (data) => api.post('/auth/verify-email', data);
+export const resendVerification = (data) => api.post('/auth/resend-verification', data);
 export const checkUsername  = (username) => api.get('/auth/check-username', { params: { username } });
 export const sendContact    = (data) => api.post('/contact', data);
 

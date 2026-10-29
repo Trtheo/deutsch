@@ -11,6 +11,7 @@ import ProgressPage from './pages/ProgressPage';
 import FlashcardsPage from './pages/FlashcardsPage';
 import AdminPage from './pages/AdminPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
               <Route path="/flashcards" element={<FlashcardsPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
             </Routes>
           </Layout>
         </AppProvider>

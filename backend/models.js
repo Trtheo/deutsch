@@ -60,6 +60,10 @@ const userSchema = new mongoose.Schema({
   avatar:   { type: String, default: '🧑' },
   bio:      { type: String, default: '' },
   role:     { type: String, enum: ['user', 'admin'], default: 'user' },
+  // No default on purpose: accounts created before verification existed have no value and count as verified
+  emailVerified:   { type: Boolean },
+  verifyTokenHash: { type: String, default: null },
+  verifyTokenExpiry:{ type: Date, default: null },
   resetToken:      { type: String, default: null },
   resetTokenExpiry:{ type: Date, default: null },
   createdAt:{ type: Date, default: Date.now }
