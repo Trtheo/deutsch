@@ -1,4 +1,4 @@
-// English ⇄ German translation. Uses the best configured provider:
+// English ⇄ German translation. Tries the configured providers best-first and falls back on failure:
 //   DEEPL_API_KEY → DeepL (best German quality; free plan: 500k characters/month)
 //   OPENAI_API_KEY → OpenAI
 //   otherwise     → MyMemory (free, no key, lower daily limit)
@@ -11,11 +11,6 @@ const CACHE_SIZE = 500;
 
 class TranslateError extends Error {}
 
-function providerName() {
-  if (process.env.DEEPL_API_KEY) return 'deepl';
-  if (process.env.OPENAI_API_KEY) return 'openai';
-  return 'mymemory';
-}
 
 async function deepl(text, from, to) {
   const key = process.env.DEEPL_API_KEY;
@@ -81,16 +76,26 @@ async function translate({ text, from = 'en', to = 'de', openaiClient = null }) 
   const key = `${from}|${to}|${text}`;
   if (cache.has(key)) return { translation: cache.get(key), provider: 'cache' };
 
-  const provider = providerName();
-  let translation;
-  if (provider === 'deepl') translation = await deepl(text, from, to);
-  else if (provider === 'openai' && openaiClient) translation = await openai(text, from, to, openaiClient);
-  else translation = await mymemory(text, from, to);
-  if (!translation) throw new TranslateError('No translation was returned. Please try again.');
+  // Try the configured providers best-first; if one fails (bad key, no credit, outage), use the next
+  const providers = [];
+  if (process.env.DEEPL_API_KEY) providers.push(['deepl', () => deepl(text, from, to)]);
+  if (process.env.OPENAI_API_KEY && openaiClient) providers.push(['openai', () => openai(text, from, to, openaiClient)]);
+  providers.push(['mymemory', () => mymemory(text, from, to)]);
 
-  if (cache.size >= CACHE_SIZE) cache.delete(cache.keys().next().value);
-  cache.set(key, translation);
-  return { translation, provider };
+  let lastError;
+  for (const [provider, run] of providers) {
+    try {
+      const translation = await run();
+      if (!translation) throw new TranslateError('No translation was returned. Please try again.');
+      if (cache.size >= CACHE_SIZE) cache.delete(cache.keys().next().value);
+      cache.set(key, translation);
+      return { translation, provider };
+    } catch (err) {
+      lastError = err;
+      if (provider !== 'mymemory') console.warn(`Translation via ${provider} failed, trying the next service:`, err.message);
+    }
+  }
+  throw lastError instanceof TranslateError ? lastError : new TranslateError('Translation is not available right now. Please try again later.');
 }
 
 module.exports = { translate, TranslateError, MAX_CHARS, _cache: cache, _chunk: chunk };

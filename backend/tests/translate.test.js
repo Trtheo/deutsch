@@ -70,3 +70,36 @@ test('uses DeepL when a key is configured', async () => {
   assert.equal(r.provider, 'deepl');
   assert.match(calls[0], /api-free\.deepl\.com/);
 });
+
+test('falls back to the free service when DeepL fails', async () => {
+  process.env.DEEPL_API_KEY = 'revoked:fx';
+  global.fetch = async (url) => {
+    calls.push(String(url));
+    if (String(url).includes('deepl')) return { ok: false, status: 403, json: async () => ({}) };
+    return { ok: true, json: async () => ({ responseStatus: 200, responseData: { translatedText: 'Hallo' } }) };
+  };
+  const r = await translate({ text: 'Hello' });
+  assert.equal(r.translation, 'Hallo');
+  assert.equal(r.provider, 'mymemory');
+  assert.equal(calls.length, 2);
+});
+
+test('falls back to the free service when OpenAI fails', async () => {
+  process.env.OPENAI_API_KEY = 'sk-revoked';
+  const failingClient = { chat: { completions: { create: async () => { throw new Error('401 Incorrect API key'); } } } };
+  try {
+    const r = await translate({ text: 'Good night', openaiClient: failingClient });
+    assert.equal(r.translation, 'DE(Good night)');
+    assert.equal(r.provider, 'mymemory');
+  } finally { delete process.env.OPENAI_API_KEY; }
+});
+
+test('uses OpenAI when it works', async () => {
+  process.env.OPENAI_API_KEY = 'sk-ok';
+  const client = { chat: { completions: { create: async () => ({ choices: [{ message: { content: 'Gute Nacht' } }] }) } } };
+  try {
+    const r = await translate({ text: 'Good night', openaiClient: client });
+    assert.deepEqual(r, { translation: 'Gute Nacht', provider: 'openai' });
+    assert.equal(calls.length, 0);
+  } finally { delete process.env.OPENAI_API_KEY; }
+});
