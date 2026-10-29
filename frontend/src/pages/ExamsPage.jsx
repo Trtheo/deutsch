@@ -4,7 +4,7 @@ import { generateExam, getLessons, getExams, deleteExam } from '../api';
 import { LevelBadge, ConfirmDelete, MicButton } from '../components/UI';
 import { speak } from '../speech';
 import { useApp } from '../context/AppContext';
-import { PenLine, FileText, Mic, BookMarked, Headphones, Volume2, Bot, RotateCcw, Trophy, AlertCircle, Lightbulb, Trash2 } from 'lucide-react';
+import { PenLine, FileText, Mic, BookMarked, Headphones, Volume2, Bot, Brain, RotateCcw, Trophy, AlertCircle, Lightbulb, Trash2 } from 'lucide-react';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2'];
 const COUNTS = [10, 20, 30];
@@ -62,29 +62,19 @@ export default function ExamsPage() {
     setSubmitted(false);
     setScore(null);
 
-    const msgs = [
-      'Connecting to AI...',
-      'Reading lesson content...',
-      'Generating fill-in-the-blank questions...',
-      'Creating writing prompts...',
-      'Building speaking exercises...',
-      'Writing reading passages...',
-      'Composing listening dialogues...',
-      'Finalizing your exam...',
-    ];
+    const msgs = ['Picking questions from the lesson’s question bank...', 'Preparing your exam...'];
     let mi = 0;
     setLoadingMsg(msgs[mi]);
     const interval = setInterval(() => {
       mi = Math.min(mi + 1, msgs.length - 1);
       setLoadingMsg(msgs[mi]);
-    }, 2500);
+    }, 1200);
 
     try {
       const res = await generateExam({ lessonSlug, level, questionCount });
       setExam(res.data);
       setActiveTab('filling');
       loadHistory();
-      if (res.data.fallback) setError('⚠️ OpenAI unavailable — a sample exam was generated. Add credits for AI-powered exams.');
     } catch (e) {
       setError(e.response?.data?.error || 'Failed to generate exam. Make sure the backend is running.');
     } finally {
@@ -129,7 +119,7 @@ export default function ExamsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Exams</h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-            Every lesson has its own question bank: each exam mixes new questions across all 5 parts. AI is used only for your AI-generated lessons.
+            Every lesson has its own hand-written question bank: each exam mixes new questions across all 5 parts.
           </p>
         </div>
       </div>
@@ -189,7 +179,7 @@ export default function ExamsPage() {
         </div>
 
         <button className="btn-primary w-full py-3 text-base" onClick={handleGenerate} disabled={loading}>
-          {loading ? 'Generating...' : 'Generate AI Exam'}
+          {loading ? 'Preparing...' : 'Start Exam'}
         </button>
 
         {error && (
@@ -202,14 +192,14 @@ export default function ExamsPage() {
       {/* Loading state */}
       {loading && (
         <div className="card text-center py-10 space-y-4">
-          <div className="flex justify-center"><Bot size={48} className="text-yellow-400 animate-bounce" /></div>
+          <div className="flex justify-center"><Brain size={48} className="text-yellow-400 animate-bounce" /></div>
           <div className="text-gray-900 dark:text-white font-bold text-lg">{loadingMsg}</div>
           <div className="flex justify-center gap-1">
             {[0,1,2].map(i => (
               <div key={i} className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
             ))}
           </div>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">AI is creating a unique exam based on the lesson content...</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">Each exam mixes different questions, so you can practise many times.</p>
         </div>
       )}
 

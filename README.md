@@ -1,8 +1,8 @@
 # Deutsch Lernen
 
-A German learning app for CEFR levels A1–B2: structured lessons, flashcards, AI-generated lessons and exams, progress tracking with XP and streaks, and an admin dashboard.
+A German learning app for CEFR levels A1–B1: hand-written lessons and exams, certificate practice, an English ⇄ German translator, flashcards, progress tracking with XP and streaks, and an admin dashboard. It uses no paid AI service.
 
-- **Backend:** Node.js, Express 5, MongoDB (Mongoose), JWT auth, OpenAI
+- **Backend:** Node.js, Express 5, MongoDB (Mongoose), JWT auth
 - **Frontend:** React 19 (Create React App), React Router 7, Tailwind CSS, offline support via a service worker
 
 ## Getting started
@@ -34,7 +34,7 @@ On first start the backend seeds the built-in lessons into MongoDB.
 |---|---|---|
 | `MONGODB_URI` | yes | MongoDB connection string |
 | `JWT_SECRET` | yes | Secret for signing login tokens: use a long random string |
-| `OPENAI_API_KEY` | no | Enables AI lesson and exam generation. Without it, template content is used |
+| `DEEPL_API_KEY` | no | Better translations in the translator (DeepL free plan: 500,000 characters a month). Without it, the free MyMemory service is used |
 | `PORT` | no | Backend port (default `5000`) |
 | `APP_URL` | no | Frontend URL, used in password-reset emails |
 | `EMAIL_USER`, `EMAIL_PASS` | no | Gmail credentials for password-reset and broadcast emails |
@@ -48,7 +48,7 @@ cd backend && npm test                           # API tests against an in-memor
 cd frontend && npm test -- --watchAll=false      # React unit and render tests
 ```
 
-The backend tests never touch your real database or OpenAI. The first run downloads a MongoDB test binary, which takes a minute.
+The backend tests never touch your real database or any external service. The first run downloads a MongoDB test binary, which takes a minute.
 
 ### Run tests automatically before every push
 
@@ -90,7 +90,9 @@ backend/
   tests/        API tests (node:test + supertest)
   models.js     Mongoose models
   seed.js       Built-in lesson content
-  fallback.js   Template lessons and exams used when OpenAI is unavailable
+  examBank.js   Builds exams from the hand-written question banks
+  translate.js  Translator (DeepL or MyMemory)
+  fallback.js   Template exams for old saved lessons with too little content
 frontend/src/
   pages/        Home, Lesson, Exams, Flashcards, Progress, Resources, Profile, Admin
   pages/lessons/  One component per lesson type
@@ -107,7 +109,7 @@ The app runs as two Render services, and the database is your MongoDB Atlas clus
 
 1. **Push the repo to GitHub.**
 2. **Allow Render to reach Atlas.** In Atlas, open *Network Access* and add `0.0.0.0/0`. Render's free plan has no fixed IP address. The database is still protected by its username and password.
-3. **Create the API.** In Render, go to **New → Blueprint** and pick the repo. When Render asks for values, paste `MONGODB_URI`. `OPENAI_API_KEY`, `EMAIL_USER` and `EMAIL_PASS` are optional. Render generates `JWT_SECRET`.
+3. **Create the API.** In Render, go to **New → Blueprint** and pick the repo. When Render asks for values, paste `MONGODB_URI`. `EMAIL_USER`, `EMAIL_PASS` and `DEEPL_API_KEY` are optional. Render generates `JWT_SECRET`.
 4. **Create the website.** Go to **New → Static Site** and pick the repo, then:
    - Root Directory: `frontend`
    - Build Command: `npm ci && npm run build`
@@ -125,7 +127,7 @@ On the free plan, the API sleeps after 15 minutes without traffic. The first req
 
 ## Lesson content
 
-All built-in lessons are hand-written, from A1 to B1. They cover everyday topics, health, housing, transport, work and official matters, verbs, grammar, and certificate-style practice exams. Each lesson has its own **exam bank**, so exams for built-in lessons never use AI. AI is used only when a user generates their own lesson.
+All built-in lessons are hand-written, from A1 to B1. They cover everyday topics, health, housing, transport, work and official matters, verbs, grammar, and certificate-style practice exams. Each lesson has its own **exam bank**, so exams never use AI. Lessons are not generated: to find one for a situation, use the topic search on the Resources page.
 
 - `backend/seed.js` holds the 17 original lessons. Their exam banks are in `backend/content/core-exams.js`.
 - `backend/content/*.js` holds every other lesson. `backend/content/SCHEMA.md` describes the format and quality rules.
@@ -144,6 +146,6 @@ The server adds new lessons to MongoDB on its next start. The tests fail if the 
 ## Access rules
 
 - Every page needs a login.
-- Users can delete only the AI lessons and exams they generated. Admins can delete any of them.
+- Users can delete only the exams (and any lessons saved earlier) that they created. Admins can delete any of them.
 - Resource uploads accept `.txt` and `.md` files up to 1 MB, or an `http(s)` link.
 - To make someone an admin, set `role: "admin"` on their user document in MongoDB. After that they can promote other users from the Admin page.

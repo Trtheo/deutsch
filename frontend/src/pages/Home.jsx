@@ -7,7 +7,7 @@ import LESSONS, { LESSON_GROUPS } from '../lessons';
 import { useAuth } from '../context/AuthContext';
 import {
   Flame, Star, CheckCircle2,
-  Brain, FolderOpen, Bot, Plus, Target, ChevronDown
+  Brain, FolderOpen, Bot, Target, ChevronDown
 } from 'lucide-react';
 
 const GOAL_OPTIONS = [20, 50, 100, 150, 200];
@@ -197,12 +197,11 @@ export default function Home() {
         </div>
       </div>
 
-      {/* AI Generated Lessons */}
+      {/* Lessons saved by users earlier (no new ones are generated) */}
       {aiLessons.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-gray-900 dark:text-white font-bold text-xl">Your AI Lessons</h2>
-            <Link to="/resources" className="text-yellow-600 dark:text-yellow-400 text-sm hover:underline flex items-center gap-1"><Plus size={14} /> Generate more</Link>
+            <h2 className="text-gray-900 dark:text-white font-bold text-xl">Your saved lessons</h2>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {aiLessons.map(l => (
@@ -212,7 +211,6 @@ export default function Home() {
                   <Bot size={28} className="text-purple-500 group-hover:scale-110 transition-transform" />
                   <div className="flex gap-2 items-center flex-wrap justify-end">
                     <LevelBadge level={l.level} />
-                    <span className="text-xs bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-500/30 px-2 py-0.5 rounded-full">AI</span>
                   </div>
                 </div>
                 <div className="text-gray-900 dark:text-white font-bold">{l.title}</div>
@@ -229,12 +227,12 @@ export default function Home() {
         <Link to="/exams" className="card hover:border-yellow-400 dark:hover:border-yellow-400/50 hover:shadow-md transition-all text-center py-6 group">
           <div className="flex justify-center mb-2"><Brain size={36} className="text-yellow-500 group-hover:scale-110 transition-transform" /></div>
           <div className="text-gray-900 dark:text-white font-bold">Take an Exam</div>
-          <div className="text-gray-500 text-sm">A1–B2 level tests</div>
+          <div className="text-gray-500 text-sm">Practice exams for every lesson</div>
         </Link>
         <Link to="/resources" className="card hover:border-yellow-400 dark:hover:border-yellow-400/50 hover:shadow-md transition-all text-center py-6 group">
           <div className="flex justify-center mb-2"><FolderOpen size={36} className="text-yellow-500 group-hover:scale-110 transition-transform" /></div>
-          <div className="text-gray-900 dark:text-white font-bold">Add Resources</div>
-          <div className="text-gray-500 text-sm">AI analyzes & creates exams</div>
+          <div className="text-gray-900 dark:text-white font-bold">Find a Topic</div>
+          <div className="text-gray-500 text-sm">Search every lesson by word</div>
         </Link>
       </div>
     </div>

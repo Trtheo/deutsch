@@ -3,15 +3,14 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const multer = require('multer');
-const { OpenAI } = require('openai');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { Lesson, Exam, Progress, User, Contact, Comment } = require('./models');
 const { seedDatabase } = require('./seed');
-const { buildFallbackLesson, buildFallbackExam } = require('./fallback');
-const { hasExamBank, buildExamFromBank } = require('./examBank');
+const { buildFallbackExam } = require('./fallback');
+const { hasExamBank, buildExamFromBank, buildExamFromContent } = require('./examBank');
 const mailer = require('./mailer');
 const emails = require('./emails');
 const { translate, TranslateError } = require('./translate');
@@ -36,18 +35,15 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later.' },
 });
 
-// AI endpoints: 20 requests per 15 minutes (expensive OpenAI calls)
-const aiLimiter = rateLimit({
+// Exam generation: 30 per 15 minutes (each one writes to the database)
+const examLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'AI generation limit reached. Please wait a few minutes before generating again.' },
+  message: { error: 'Exam limit reached. Please wait a few minutes before starting another exam.' },
 });
-
-app.use('/api/', apiLimiter);
-app.use('/api/lessons/generate', aiLimiter);
-app.use('/api/exams/generate', aiLimiter);
+app.use('/api/exams/generate', examLimiter);
 
 // Resource uploads: plain-text files only (read as UTF-8), max 1 MB
 const ALLOWED_UPLOAD_EXT = /\.(txt|md)$/i;
@@ -65,10 +61,6 @@ for (const key of ['MONGODB_URI', 'JWT_SECRET']) {
     process.exit(1);
   }
 }
-
-// OpenAI is optional: without a key, generation uses the template fallbacks
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
-if (!openai) console.warn('⚠️  OPENAI_API_KEY not set — lessons and exams will use template fallbacks');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -488,6 +480,34 @@ app.get('/api/lessons', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Topic search across all lessons: titles, descriptions and vocabulary (German and English).
+// Must stay above /api/lessons/:slug so "search" isn't read as a slug.
+app.get('/api/lessons/search', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim().toLowerCase().slice(0, 60);
+    if (q.length < 2) return res.json([]);
+    const has = v => typeof v === 'string' && v.toLowerCase().includes(q);
+    const lessons = await Lesson.find({})
+      .select('slug title titleDe level category aiGenerated content.description content.descriptionEn content.sections')
+      .lean();
+    const results = [];
+    for (const l of lessons) {
+      let score = 0;
+      if (has(l.title) || has(l.titleDe)) score += 10;
+      if (has(l.content?.description) || has(l.content?.descriptionEn)) score += 3;
+      const matches = (l.content?.sections || []).flatMap(s => s.items || [])
+        .filter(i => has(i.de) || has(i.en) || has(i.example) || has(i.exampleEn));
+      score += Math.min(matches.length, 10);
+      if (score) results.push({
+        slug: l.slug, title: l.title, titleDe: l.titleDe, level: l.level, category: l.category, aiGenerated: !!l.aiGenerated, score,
+        matches: matches.slice(0, 3).map(i => ({ de: i.de, en: i.en })),
+      });
+    }
+    results.sort((a, b) => b.score - a.score || a.level.localeCompare(b.level));
+    res.json(results.slice(0, 20));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/lessons/ai', async (req, res) => {
   try {
     const lessons = await Lesson.find({ aiGenerated: true }).select('-content').sort({ createdAt: -1 });
@@ -515,36 +535,6 @@ app.delete('/api/lessons/:slug', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/lessons/generate', authMiddleware, async (req, res) => {
-  const { topic, level = 'A1', category = 'vocabulary' } = req.body;
-  if (!topic) return res.status(400).json({ error: 'topic is required' });
-  const slug = `ai-${topic.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}-${Date.now()}`;
-  const prompt = `You are a professional German language teacher creating a complete ${level} CEFR lesson.
-Topic: "${topic}", Category: ${category}
-Generate a rich, detailed lesson with bilingual content (German + English).
-Return ONLY valid JSON:
-{"title":"English title","titleDe":"German title","description":"Short German description","descriptionEn":"Short English description","sections":[{"heading":"German heading","headingEn":"English heading","items":[{"de":"German","en":"English","example":"German example","exampleEn":"English example","note":"optional note"}]}],"keyPoints":["point1","point2","point3"],"dialogue":{"title":"German title","titleEn":"English title","lines":[{"speaker":"A","de":"German","en":"English"}]}}
-Make it comprehensive with at least 3 sections, 4+ items per section, 3+ key points, and a 6+ line dialogue.`;
-  try {
-    if (!openai) throw new Error('OPENAI_API_KEY not set');
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'system', content: 'You are a professional German language teacher. Always respond with valid JSON only.' }, { role: 'user', content: prompt }],
-      response_format: { type: 'json_object' }, temperature: 0.7,
-    });
-    const data = JSON.parse(completion.choices[0].message.content);
-    const lesson = await Lesson.create({ slug, title: data.title, titleDe: data.titleDe, level, category, aiGenerated: true, createdBy: req.user.id, content: { description: data.description, descriptionEn: data.descriptionEn, sections: data.sections || [], keyPoints: data.keyPoints || [], dialogue: data.dialogue || null, aiGenerated: true, topic } });
-    res.json(lesson);
-  } catch (err) {
-    console.warn('⚠️  OpenAI unavailable, using fallback lesson:', err.message);
-    try {
-      const data = buildFallbackLesson(topic, level, category);
-      const lesson = await Lesson.create({ slug, title: data.title, titleDe: data.titleDe, level, category, aiGenerated: true, createdBy: req.user.id, content: { description: data.description, descriptionEn: data.descriptionEn, sections: data.sections, keyPoints: data.keyPoints, dialogue: data.dialogue, aiGenerated: true, topic, fallback: true } });
-      res.json({ ...lesson.toObject(), fallback: true });
-    } catch (fbErr) { res.status(500).json({ error: 'Failed to generate lesson: ' + fbErr.message }); }
-  }
-});
-
 app.post('/api/lessons/:slug/resources', authMiddleware, upload.single('file'), async (req, res) => {
   try {
     const { title, url } = req.body;
@@ -563,46 +553,21 @@ app.post('/api/lessons/:slug/resources', authMiddleware, upload.single('file'), 
 
 // ── Exams ─────────────────────────────────────────────────
 app.post('/api/exams/generate', authMiddleware, async (req, res) => {
-  const { lessonSlug, level = 'A1' } = req.body;
+  const { lessonSlug } = req.body;
   const questionCount = Math.min(50, Math.max(5, Number(req.body.questionCount) || 10));
   try {
     const lesson = await Lesson.findOne({ slug: lessonSlug });
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
 
-    // Built-in lessons have a hand-written question bank: use it, no AI involved
-    if (hasExamBank(lesson)) {
-      const { parts } = buildExamFromBank(lesson, questionCount);
-      const exam = await Exam.create({ lessonSlug, lessonTitle: lesson.title, level: lesson.level, questionCount, parts, createdBy: req.user.id, aiGenerated: false });
-      return res.json({ ...exam.toObject(), fromBank: true });
-    }
-
-    const lessonContext = lesson ? JSON.stringify(lesson.content).slice(0, 3000) : '';
-    const perPart = Math.max(2, Math.floor(questionCount / 5));
-    const extra = questionCount - perPart * 5;
-    const prompt = `You are a certified German language examiner creating a ${level} CEFR exam.
-Lesson: "${lesson?.title || lessonSlug}" (${level} level). Lesson content: ${lessonContext}
-Create exam with: filling: ${perPart + extra}q, writing: ${perPart}q, speaking: ${perPart}q, reading: ${perPart}q, listening: ${perPart}q.
-Return ONLY valid JSON: {"parts":{"filling":[{"type":"fill","question":"","questionEn":"","answer":"","options":["","","",""],"explanation":"","explanationEn":""}],"writing":[{"type":"write","question":"","questionEn":"","answer":"","answerEn":"","tip":"","options":[]}],"speaking":[{"type":"speak","question":"","questionEn":"","answer":"","answerEn":"","pronunciation":"","tip":"","options":[]}],"reading":[{"type":"read","text":"","textEn":"","question":"","questionEn":"","answer":"","options":["","","",""],"explanation":"","explanationEn":""}],"listening":[{"type":"listen","script":"","scriptEn":"","question":"","questionEn":"","answer":"","options":["","","",""],"explanation":"","explanationEn":""}]}}`;
-    if (!openai) throw new Error('OPENAI_API_KEY not set');
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'system', content: 'You are a certified German language examiner. Always respond with valid JSON only.' }, { role: 'user', content: prompt }],
-      response_format: { type: 'json_object' }, temperature: 0.8,
-    });
-    const examData = JSON.parse(completion.choices[0].message.content);
-    ['filling', 'writing', 'speaking', 'reading', 'listening'].forEach(p => {
-      if (!Array.isArray(examData.parts?.[p])) { examData.parts = examData.parts || {}; examData.parts[p] = []; }
-    });
-    const exam = await Exam.create({ lessonSlug, lessonTitle: lesson?.title || lessonSlug, level, questionCount, parts: examData.parts, createdBy: req.user.id, aiGenerated: true });
-    res.json(exam);
-  } catch (err) {
-    console.warn('⚠️  OpenAI unavailable, using fallback exam:', err.message);
-    try {
-      const lesson = await Lesson.findOne({ slug: lessonSlug });
-      const examData = buildFallbackExam(lesson, level, questionCount);
-      const exam = await Exam.create({ lessonSlug, lessonTitle: lesson?.title || lessonSlug, level, questionCount, parts: examData.parts, createdBy: req.user.id, aiGenerated: false });
-      res.json({ ...exam.toObject(), fallback: true });
-    } catch (fbErr) { res.status(500).json({ error: 'Exam generation failed: ' + fbErr.message }); }
-  }
+    // No AI: built-in lessons have a hand-written question bank; lessons saved earlier
+    // get questions built from their own vocabulary, or a template exam as last resort
+    const fromBank = hasExamBank(lesson);
+    const { parts } = fromBank
+      ? buildExamFromBank(lesson, questionCount)
+      : (buildExamFromContent(lesson, questionCount) || buildFallbackExam(lesson, lesson.level, questionCount));
+    const exam = await Exam.create({ lessonSlug, lessonTitle: lesson.title, level: lesson.level, questionCount, parts, createdBy: req.user.id, aiGenerated: false });
+    res.json({ ...exam.toObject(), fromBank });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/exams', async (req, res) => {

@@ -1,6 +1,6 @@
 # Runs the full app locally: MongoDB + backend + frontend (nginx).
 #   docker compose up --build      → http://localhost:8080
-# Secrets (JWT_SECRET, OPENAI_API_KEY, EMAIL_*) are read from backend/.env.
+# Secrets (JWT_SECRET, EMAIL_*, optional DEEPL_API_KEY) are read from backend/.env.
 
 services:
   mongo:

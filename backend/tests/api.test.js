@@ -207,7 +207,6 @@ describe('email verification', () => {
 
 describe('protected routes require login', () => {
   const routes = [
-    ['post', '/api/lessons/generate'],
     ['delete', '/api/lessons/some-slug'],
     ['post', '/api/lessons/some-slug/resources'],
     ['post', '/api/exams/generate'],
@@ -231,26 +230,59 @@ describe('protected routes require login', () => {
   });
 });
 
-describe('lessons and exams', () => {
-  test('generating a lesson without OpenAI uses the fallback and records the creator', async () => {
-    const { token, user } = await registerUser();
-    const res = await request(app).post('/api/lessons/generate').set(auth(token)).send({ topic: 'Food', level: 'A1' });
-    assert.equal(res.status, 200);
-    assert.equal(res.body.fallback, true);
-    assert.equal(res.body.createdBy, user.id);
+// A lesson saved by a user (from before all content was hand-written): no exam bank, only vocabulary
+async function savedLesson(ownerId, slug = 'saved-travel') {
+  return Lesson.create({
+    slug, title: 'Travel', titleDe: 'Reisen', level: 'A1', category: 'vocabulary', aiGenerated: true, createdBy: ownerId,
+    content: { sections: [{ heading: 'Wörter', headingEn: 'Words', items: [
+      { de: 'der Zug', en: 'train', example: 'Der Zug fährt um acht.', exampleEn: 'The train leaves at eight.' },
+      { de: 'der Bahnhof', en: 'station', example: 'Wo ist der Bahnhof?', exampleEn: 'Where is the station?' },
+      { de: 'die Fahrkarte', en: 'ticket', example: 'Ich kaufe eine Fahrkarte.', exampleEn: 'I buy a ticket.' },
+      { de: 'das Gleis', en: 'platform', example: 'Der Zug kommt auf Gleis 3.', exampleEn: 'The train arrives on platform 3.' },
+      { de: 'die Verspätung', en: 'delay', example: 'Der Zug hat Verspätung.', exampleEn: 'The train is delayed.' },
+    ] }] },
+  });
+}
+
+describe('lessons and exams (no AI)', () => {
+  test('AI lesson generation no longer exists', async () => {
+    const { token } = await registerUser();
+    const res = await request(app).post('/api/lessons/generate').set(auth(token)).send({ topic: 'Food' });
+    assert.equal(res.status, 404);
   });
 
-  test('only the creator or an admin can delete a lesson', async () => {
+  test('saved lessons without a bank get an exam built from their own words', async () => {
+    const { token, user } = await registerUser();
+    await savedLesson(user.id);
+    const res = await request(app).post('/api/exams/generate').set(auth(token)).send({ lessonSlug: 'saved-travel', questionCount: 10 });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.fromBank, false);
+    assert.equal(res.body.aiGenerated, false);
+    const words = ['train', 'station', 'ticket', 'platform', 'delay'];
+    for (const q of res.body.parts.filling) {
+      assert.ok(words.includes(q.answer), q.answer);
+      assert.equal(q.options.length, 4);
+      assert.ok(q.options.includes(q.answer));
+    }
+    for (const q of res.body.parts.listening) assert.ok(q.options.includes(q.answer));
+  });
+
+  test('exams for unknown lessons are refused', async () => {
+    const { token } = await registerUser();
+    const res = await request(app).post('/api/exams/generate').set(auth(token)).send({ lessonSlug: 'does-not-exist' });
+    assert.equal(res.status, 404);
+  });
+
+  test('only the creator or an admin can delete a saved lesson', async () => {
     const owner = await registerUser();
     const other = await registerUser({ username: 'ben', email: 'ben@example.com' });
-    const { body: lesson } = await request(app).post('/api/lessons/generate').set(auth(owner.token)).send({ topic: 'Travel' });
+    await savedLesson(owner.user.id);
 
-    let res = await request(app).delete(`/api/lessons/${lesson.slug}`).set(auth(other.token));
+    let res = await request(app).delete('/api/lessons/saved-travel').set(auth(other.token));
     assert.equal(res.status, 403);
-
-    res = await request(app).delete(`/api/lessons/${lesson.slug}`).set(auth(owner.token));
+    res = await request(app).delete('/api/lessons/saved-travel').set(auth(owner.token));
     assert.equal(res.status, 200);
-    assert.equal(await Lesson.countDocuments({ slug: lesson.slug }), 0);
+    assert.equal(await Lesson.countDocuments({ slug: 'saved-travel' }), 0);
   });
 
   test('admins can delete any exam, other users cannot', async () => {
@@ -258,8 +290,8 @@ describe('lessons and exams', () => {
     const other = await registerUser({ username: 'ben', email: 'ben@example.com' });
     const adminToken = await makeAdmin(other);
     const stranger = await registerUser({ username: 'cara', email: 'cara@example.com' });
-    const { body: lesson } = await request(app).post('/api/lessons/generate').set(auth(owner.token)).send({ topic: 'Home' });
-    const { body: exam } = await request(app).post('/api/exams/generate').set(auth(owner.token)).send({ lessonSlug: lesson.slug });
+    await savedLesson(owner.user.id);
+    const { body: exam } = await request(app).post('/api/exams/generate').set(auth(owner.token)).send({ lessonSlug: 'saved-travel' });
     assert.ok(exam._id, JSON.stringify(exam));
 
     let res = await request(app).delete(`/api/exams/${exam._id}`).set(auth(stranger.token));
@@ -267,6 +299,20 @@ describe('lessons and exams', () => {
     res = await request(app).delete(`/api/exams/${exam._id}`).set(auth(adminToken));
     assert.equal(res.status, 200);
     assert.equal(await Exam.countDocuments(), 0);
+  });
+
+  test('topic search finds lessons by title and by vocabulary, without answers', async () => {
+    const { meta, ...shopping } = require('../content')[0]; // a1-shopping
+    await Lesson.create(shopping);
+    let res = await request(app).get('/api/lessons/search?q=kasse');
+    assert.equal(res.status, 200);
+    assert.equal(res.body[0].slug, 'a1-shopping');
+    assert.ok(res.body[0].matches.some(m => /Kasse/.test(m.de)));
+    assert.equal(res.body[0].content, undefined);
+    res = await request(app).get('/api/lessons/search?q=shopping');
+    assert.equal(res.body[0].slug, 'a1-shopping');
+    res = await request(app).get('/api/lessons/search?q=x');
+    assert.deepEqual(res.body, []);
   });
 });
 

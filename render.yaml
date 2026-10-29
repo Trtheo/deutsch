@@ -17,8 +17,8 @@ services:
         sync: false              # paste your Atlas connection string when prompted
       - key: JWT_SECRET
         generateValue: true      # Render generates a long random secret
-      - key: OPENAI_API_KEY
-        sync: false              # optional: only for user-generated AI lessons
+      - key: DEEPL_API_KEY
+        sync: false              # optional: better translations (DeepL free plan); without it the free MyMemory service is used
       - key: EMAIL_USER
         sync: false              # optional: Gmail address for password-reset emails
       - key: EMAIL_PASS

@@ -46,7 +46,7 @@ export const translateText = (data) => api.post('/translate', data);
 export const getLessons    = (params) => api.get('/lessons', { params });
 export const getAILessons  = ()       => api.get('/lessons/ai');
 export const getLesson     = (slug)   => api.get(`/lessons/${slug}`);
-export const generateLesson= (data)   => api.post('/lessons/generate', data);
+export const searchLessons = (q)      => api.get('/lessons/search', { params: { q } });
 export const deleteLesson  = (slug)   => api.delete(`/lessons/${slug}`);
 
 // Progress
