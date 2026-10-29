@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
+import { DialogProvider } from './components/Dialog';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import LessonPage from './pages/LessonPage';
@@ -18,6 +19,7 @@ import ProfilePage from './pages/ProfilePage';
 export default function App() {
   return (
     <BrowserRouter>
+      <DialogProvider>
       <AuthProvider>
         <AppProvider>
           <Layout>
@@ -37,6 +39,7 @@ export default function App() {
           </Layout>
         </AppProvider>
       </AuthProvider>
+      </DialogProvider>
     </BrowserRouter>
   );
 }

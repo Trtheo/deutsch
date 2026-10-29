@@ -2,15 +2,22 @@ import React, { useState } from 'react';
 import { Volume2, Mic, Square } from 'lucide-react';
 import { SpeakText } from '../../components/UI';
 import { speak } from '../../speech';
+import { useDialog } from '../../components/Dialog';
 
 export default function SpeakingLesson({ lesson }) {
   const { phrases } = lesson.content;
+  const { alert } = useDialog();
   const [recording, setRecording] = useState(null);
   const [practiced, setPracticed] = useState({});
 
   const handleRecord = (idx) => {
     if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      alert('Speech recognition not supported. Try Chrome.');
+      alert({
+        tone: 'warning',
+        title: 'Speech recognition isn’t available',
+        message: 'Your browser can’t listen to your pronunciation. Please open this lesson in Chrome or Edge to practise speaking.',
+        confirmLabel: 'Got it',
+      });
       return;
     }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { adminGetUsers, adminUpdateRole, adminDeleteUser, adminGetContacts, adminMarkRead, adminDeleteContact, adminBroadcast, adminGetAnalytics } from '../api';
 import { Trash2, ShieldCheck, ShieldOff, AlertCircle, MessageSquare, Users, Mail, MailOpen, Send, CheckCircle2, BarChart2, TrendingUp, BookOpen, MessageCircle, Star, ClipboardList } from 'lucide-react';
+import { useDialog } from '../components/Dialog';
 
 const TYPE_COLORS = {
   Support:     'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400',
@@ -12,6 +13,7 @@ const TYPE_COLORS = {
 
 export default function AdminPage() {
   const { user } = useAuth();
+  const { confirm } = useDialog();
   const [tab, setTab] = useState('users');
 
   // Users
@@ -63,11 +65,16 @@ export default function AdminPage() {
     } catch (e) { setUsersError(e.response?.data?.error || 'Failed to update role'); }
   };
 
-  const deleteUser = async (id) => {
-    if (!window.confirm('Delete this user?')) return;
+  const deleteUser = async (u) => {
+    const ok = await confirm({
+      title: 'Delete this user?',
+      message: `The account of ${u.username} (${u.email}) will be permanently deleted. This can’t be undone.`,
+      confirmLabel: 'Delete user',
+    });
+    if (!ok) return;
     try {
-      await adminDeleteUser(id);
-      setUsers(prev => prev.filter(x => x._id !== id));
+      await adminDeleteUser(u._id);
+      setUsers(prev => prev.filter(x => x._id !== u._id));
     } catch (e) { setUsersError(e.response?.data?.error || 'Failed to delete user'); }
   };
 
@@ -81,12 +88,17 @@ export default function AdminPage() {
     }
   };
 
-  const handleDeleteContact = async (id) => {
-    if (!window.confirm('Delete this message?')) return;
+  const handleDeleteContact = async (c) => {
+    const ok = await confirm({
+      title: 'Delete this message?',
+      message: `The message from ${c.name} will be permanently deleted. This can’t be undone.`,
+      confirmLabel: 'Delete message',
+    });
+    if (!ok) return;
     try {
-      await adminDeleteContact(id);
-      setContacts(prev => prev.filter(x => x._id !== id));
-      if (expanded === id) setExpanded(null);
+      await adminDeleteContact(c._id);
+      setContacts(prev => prev.filter(x => x._id !== c._id));
+      if (expanded === c._id) setExpanded(null);
     } catch {}
   };
 
@@ -215,7 +227,7 @@ export default function AdminPage() {
                               className="p-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-500/10 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
                               {u.role === 'admin' ? <ShieldOff size={15} /> : <ShieldCheck size={15} />}
                             </button>
-                            <button onClick={() => deleteUser(u._id)} title="Delete user"
+                            <button onClick={() => deleteUser(u)} title="Delete user"
                               className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
                               <Trash2 size={15} />
                             </button>
@@ -261,7 +273,7 @@ export default function AdminPage() {
                   </div>
                   <div className="text-xs text-gray-400 dark:text-gray-500 truncate">{c.email} · {new Date(c.createdAt).toLocaleString()}</div>
                 </div>
-                <button onClick={e => { e.stopPropagation(); handleDeleteContact(c._id); }}
+                <button onClick={e => { e.stopPropagation(); handleDeleteContact(c); }}
                   className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-gray-300 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0">
                   <Trash2 size={14} />
                 </button>
