@@ -39,6 +39,9 @@ export const resendVerification = (data) => api.post('/auth/resend-verification'
 export const checkUsername  = (username) => api.get('/auth/check-username', { params: { username } });
 export const sendContact    = (data) => api.post('/contact', data);
 
+// Translator
+export const translateText = (data) => api.post('/translate', data);
+
 // Lessons
 export const getLessons    = (params) => api.get('/lessons', { params });
 export const getAILessons  = ()       => api.get('/lessons/ai');

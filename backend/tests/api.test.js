@@ -215,6 +215,7 @@ describe('protected routes require login', () => {
     ['get', '/api/progress'],
     ['post', '/api/progress'],
     ['get', '/api/admin/users'],
+    ['post', '/api/translate'],
   ];
   for (const [method, path] of routes) {
     test(`${method.toUpperCase()} ${path} → 401`, async () => {

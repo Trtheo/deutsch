@@ -8,7 +8,7 @@ import SearchModal from './SearchModal';
 import {
   Home, BarChart2, Brain, FolderOpen, Type, BookOpen, Hash,
   FileText, Zap, BookMarked, PenLine, Headphones, Mic, Clock,
-  Sun, Moon, Flame, Star, LogOut, BookOpenCheck, WifiOff, Layers, Bell, BellOff, ShieldCheck, MessageSquare, X, Search
+  Sun, Moon, Flame, Star, LogOut, BookOpenCheck, WifiOff, Layers, Bell, BellOff, ShieldCheck, MessageSquare, X, Search, Languages
 } from 'lucide-react';
 import { isSupported, requestPermission, scheduleDailyReminder, cancelDailyReminder, getNotifSettings } from '../notifications';
 
@@ -28,6 +28,7 @@ const navGroups = [
       { path: '/progress',   Icon: BarChart2,  label: 'Progress'   },
       { path: '/flashcards', Icon: Layers,     label: 'Flashcards' },
       { path: '/exams',      Icon: Brain,      label: 'Exams'      },
+      { path: '/translate',  Icon: Languages,  label: 'Translator' },
       { path: '/resources',  Icon: FolderOpen, label: 'Resources'  },
     ],
   },

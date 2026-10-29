@@ -12,6 +12,7 @@ import FlashcardsPage from './pages/FlashcardsPage';
 import AdminPage from './pages/AdminPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
+import TranslatorPage from './pages/TranslatorPage';
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/verify-email" element={<VerifyEmailPage />} />
+              <Route path="/translate" element={<TranslatorPage />} />
             </Routes>
           </Layout>
         </AppProvider>

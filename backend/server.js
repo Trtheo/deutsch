@@ -14,6 +14,7 @@ const { buildFallbackLesson, buildFallbackExam } = require('./fallback');
 const { hasExamBank, buildExamFromBank } = require('./examBank');
 const mailer = require('./mailer');
 const emails = require('./emails');
+const { translate, TranslateError } = require('./translate');
 
 const app = express();
 // Behind a reverse proxy (e.g. nginx in Docker) set TRUST_PROXY=1 so rate limiting sees real client IPs
@@ -629,6 +630,27 @@ app.delete('/api/exams/:id', authMiddleware, async (req, res) => {
     await exam.deleteOne();
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Translator ────────────────────────────────────────────
+// 60 translations per 15 minutes per IP keeps the free provider quota safe
+const translateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Translation limit reached. Please wait a few minutes.' },
+});
+
+app.post('/api/translate', authMiddleware, translateLimiter, async (req, res) => {
+  try {
+    const { text, from = 'en', to = 'de' } = req.body;
+    res.json(await translate({ text, from, to, openaiClient: openai }));
+  } catch (err) {
+    if (err instanceof TranslateError) return res.status(400).json({ error: err.message });
+    console.error('Translation failed:', err.message);
+    res.status(502).json({ error: 'The translation service is not reachable right now. Please try again.' });
+  }
 });
 
 // ── Progress ──────────────────────────────────────────────
