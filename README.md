@@ -101,16 +101,23 @@ frontend/src/
 
 ## Deploying to Render
 
-`render.yaml` sets up two services on [Render](https://render.com):
-- **deutsch-lernen-api**, the backend, built from `backend/Dockerfile`.
-- **deutsch-lernen**, the website, a static build of `frontend/`. It's built with the API's address (`REACT_APP_API_HOST`).
-
-The database is your MongoDB Atlas cluster.
+The app runs as two Render services, and the database is your MongoDB Atlas cluster:
+- **The API** (`deutsch-lernen-api`), built from `backend/Dockerfile`. `render.yaml` describes it.
+- **The website**, a Render Static Site built from `frontend/`.
 
 1. **Push the repo to GitHub.**
 2. **Allow Render to reach Atlas.** In Atlas, open *Network Access* and add `0.0.0.0/0`. Render's free plan has no fixed IP address. The database is still protected by its username and password.
-3. **Create the services.** In Render, go to **New → Blueprint** and pick the repo. When Render asks for values, paste `MONGODB_URI`. `OPENAI_API_KEY`, `EMAIL_USER` and `EMAIL_PASS` are optional. Render generates `JWT_SECRET`.
-4. **Set the website address.** After the first deploy, set `APP_URL` on the API service to the website URL, for example `https://deutsch-lernen.onrender.com`. Password-reset emails link to it.
+3. **Create the API.** In Render, go to **New → Blueprint** and pick the repo. When Render asks for values, paste `MONGODB_URI`. `OPENAI_API_KEY`, `EMAIL_USER` and `EMAIL_PASS` are optional. Render generates `JWT_SECRET`.
+4. **Create the website.** Go to **New → Static Site** and pick the repo, then:
+   - Root Directory: `frontend`
+   - Build Command: `npm ci && npm run build`
+   - Publish Directory: `build`
+   - Environment: `REACT_APP_API_HOST` = the API's public host, for example `deutsch-lernen-api-67oz.onrender.com`, and `NODE_VERSION` = `22`
+   - **Redirects/Rewrites:** `/*` → `/index.html`, action *Rewrite*. Without this rule, links like `/exams` and password-reset links show "Not Found".
+   - **Headers:** `/sw.js`, `Cache-Control: no-cache`
+5. **Set the website address on the API.** Set `APP_URL` on the API service to the website URL, for example `https://deutsch-zqym.onrender.com`. Password-reset emails link to it.
+
+`REACT_APP_API_HOST` is built into the website. If you change it, use **Manual Deploy → Clear build cache & deploy**.
 
 After that, every push to `main` redeploys both services. The CI checks run on GitHub at the same time.
 

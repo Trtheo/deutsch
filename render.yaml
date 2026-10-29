@@ -1,5 +1,6 @@
 # Render Blueprint: Dashboard → New → Blueprint → pick this repo.
-# Creates the API (Docker) and the website (static). The database is your MongoDB Atlas cluster.
+# Creates the API (Docker). The database is your MongoDB Atlas cluster.
+# The website is a separate Render Static Site (created in the dashboard, see README "Deploying to Render").
 services:
   - type: web
     name: deutsch-lernen-api
@@ -29,28 +30,3 @@ services:
       - key: NODE_ENV
         value: production
 
-  - type: web
-    name: deutsch-lernen
-    runtime: static
-    rootDir: frontend
-    buildCommand: npm ci && npm run build
-    staticPublishPath: ./build
-    autoDeploy: true
-    envVars:
-      - key: NODE_VERSION
-        value: "22"
-      # Public address of the API service (fromService "host" is the internal name and doesn't work in browsers).
-      # If you recreate the API and Render gives it a different suffix, update this value.
-      - key: REACT_APP_API_HOST
-        value: deutsch-lernen-api-67oz.onrender.com
-    headers:
-      - path: /sw.js
-        name: Cache-Control
-        value: no-cache
-      - path: /static/*
-        name: Cache-Control
-        value: public, max-age=31536000, immutable
-    routes:
-      - type: rewrite              # client-side routes (/lesson/..., /exams) serve the app
-        source: /*
-        destination: /index.html
