@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Eye, EyeOff, Sun, Moon, MailCheck } from 'lucide-react';
 import { register as apiRegister, login as apiLogin, updateProfile, updatePassword, forgotPassword, checkUsername, resendVerification } from '../api';
 import VerifyEmailPage from '../pages/VerifyEmailPage';
+import { useToast } from '../components/Toast';
 import ResetPasswordPage from '../pages/ResetPasswordPage';
 
 const AuthContext = createContext();
@@ -24,15 +25,19 @@ function AuthScreen({ onDone }) {
   const [usernameCustomized, setUsernameCustomized] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState(null);
   const debounceRef = useRef(null);
+  // Messages are toasts; empty calls (used to clear old messages) do nothing
+  const toast = useToast();
+  const setError = useCallback((msg) => { if (msg) toast.error(msg); }, [toast]);
+  const setSuccess = useCallback((msg) => { if (msg) toast.success(msg); }, [toast]);
+
   // A notice left by a forced sign-out (e.g. account deactivated) is shown once
-  const [error, setError] = useState(() => {
+  useEffect(() => {
     try {
-      const notice = sessionStorage.getItem('auth_notice') || '';
+      const notice = sessionStorage.getItem('auth_notice');
       sessionStorage.removeItem('auth_notice');
-      return notice;
-    } catch { return ''; }
-  });
-  const [success, setSuccess] = useState('');
+      if (notice) setError(notice);
+    } catch {}
+  }, [setError]);
   const [pendingEmail, setPendingEmail] = useState('');       // shown on the check-your-inbox screen
   const [unverifiedEmail, setUnverifiedEmail] = useState(''); // login refused until verified
   const [resendState, setResendState] = useState('');         // '' | sending | sent | failed
@@ -296,24 +301,12 @@ function AuthScreen({ onDone }) {
             </div>
           )}
 
-          {error && (
-            <div className="flex items-center gap-2 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl px-3 py-2.5">
-              <span className="text-red-500 text-base">✕</span>
-              <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
-            </div>
-          )}
           {mode === 'login' && unverifiedEmail && (
             resendState === 'sent'
               ? <p className="text-green-600 dark:text-green-400 text-sm text-center">A new verification link is on its way to {unverifiedEmail}.</p>
               : <button type="button" className="btn-secondary w-full" onClick={() => handleResend(unverifiedEmail)} disabled={resendState === 'sending'}>
                   {resendState === 'sending' ? 'Sending…' : 'Resend verification email'}
                 </button>
-          )}
-          {success && (
-            <div className="flex items-center gap-2 bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/30 rounded-xl px-3 py-2.5">
-              <span className="text-green-500 text-base">✓</span>
-              <p className="text-green-600 dark:text-green-400 text-sm">{success}</p>
-            </div>
           )}
 
           <button className="btn-primary w-full py-3 text-base" onClick={handleSubmit} disabled={loading}>

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { resetPassword } from '../api';
+import { useToast } from '../components/Toast';
 
 export default function ResetPasswordPage() {
   const [params] = useSearchParams();
@@ -12,8 +13,9 @@ export default function ResetPasswordPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const toast = useToast();
+  const setError = useCallback((msg) => { if (msg) toast.error(msg); }, [toast]);
+  const setSuccess = useCallback((msg) => { if (msg) toast.success(msg); }, [toast]);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
@@ -60,18 +62,6 @@ export default function ResetPasswordPage() {
               onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
           </div>
 
-          {error && (
-            <div className="flex items-center gap-2 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl px-3 py-2.5">
-              <span className="text-red-500">✕</span>
-              <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
-            </div>
-          )}
-          {success && (
-            <div className="flex items-center gap-2 bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/30 rounded-xl px-3 py-2.5">
-              <span className="text-green-500">✓</span>
-              <p className="text-green-600 dark:text-green-400 text-sm">{success}</p>
-            </div>
-          )}
 
           <button className="btn-primary w-full py-3 text-base" onClick={handleSubmit} disabled={loading}>
             {loading ? 'Please wait...' : 'Reset Password'}

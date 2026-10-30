@@ -3,6 +3,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import * as api from '../api';
 import { AuthProvider } from '../context/AuthContext';
 import VerifyEmailPage from '../pages/VerifyEmailPage';
+import { ToastProvider } from '../components/Toast';
 
 jest.mock('../api');
 
@@ -13,11 +14,11 @@ beforeEach(() => {
 });
 
 const renderAt = (url) => render(
-  <MemoryRouter initialEntries={[url]}>
+  <ToastProvider><MemoryRouter initialEntries={[url]}>
     <AuthProvider>
       <Routes><Route path="*" element={<div>DASHBOARD</div>} /></Routes>
     </AuthProvider>
-  </MemoryRouter>
+  </MemoryRouter></ToastProvider>
 );
 
 test('the email link verifies, stores the session and opens the dashboard without logging in', async () => {

@@ -4,7 +4,8 @@ import { generateExam, getLessons, getExams, deleteExam } from '../api';
 import { LevelBadge, ConfirmDelete, MicButton } from '../components/UI';
 import { speak } from '../speech';
 import { useApp } from '../context/AppContext';
-import { PenLine, FileText, Mic, BookMarked, Headphones, Volume2, Bot, Brain, RotateCcw, Trophy, AlertCircle, Lightbulb, Trash2 } from 'lucide-react';
+import { useToast } from '../components/Toast';
+import { PenLine, FileText, Mic, BookMarked, Headphones, Volume2, Bot, Brain, RotateCcw, Trophy, Lightbulb, Trash2 } from 'lucide-react';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2'];
 const COUNTS = [10, 20, 30];
@@ -30,7 +31,7 @@ export default function ExamsPage() {
   const [answers, setAnswers] = useState({});
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(null);
-  const [error, setError] = useState('');
+  const toast = useToast();
   const [history, setHistory] = useState([]);
   const [deleteId, setDeleteId] = useState(null);
   const [activeMainTab, setActiveMainTab] = useState('new');
@@ -48,7 +49,7 @@ export default function ExamsPage() {
       await deleteExam(id);
       setHistory(h => h.filter(e => e._id !== id));
     } catch (e) {
-      setError(e.response?.data?.error || 'Delete failed.');
+      toast.error(e.response?.data?.error || 'Delete failed.');
     }
     setDeleteId(null);
   };
@@ -56,7 +57,6 @@ export default function ExamsPage() {
   const handleGenerate = async () => {
     setActiveMainTab('new');
     setLoading(true);
-    setError('');
     setExam(null);
     setAnswers({});
     setSubmitted(false);
@@ -76,7 +76,7 @@ export default function ExamsPage() {
       setActiveTab('filling');
       loadHistory();
     } catch (e) {
-      setError(e.response?.data?.error || 'Failed to generate exam. Make sure the backend is running.');
+      toast.error(e.response?.data?.error || 'Could not start the exam. Please try again.');
     } finally {
       clearInterval(interval);
       setLoading(false);
@@ -182,11 +182,6 @@ export default function ExamsPage() {
           {loading ? 'Preparing...' : 'Start Exam'}
         </button>
 
-        {error && (
-          <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl p-3 text-red-600 dark:text-red-400 text-sm flex items-center gap-2">
-            <AlertCircle size={15} /> {error}
-          </div>
-        )}
       </div>
 
       {/* Loading state */}

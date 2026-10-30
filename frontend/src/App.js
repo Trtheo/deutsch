@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { DialogProvider } from './components/Dialog';
+import { ToastProvider } from './components/Toast';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import LessonPage from './pages/LessonPage';
@@ -19,27 +20,29 @@ import ProfilePage from './pages/ProfilePage';
 export default function App() {
   return (
     <BrowserRouter>
-      <DialogProvider>
-      <AuthProvider>
-        <AppProvider>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/lesson/:slug" element={<LessonPage />} />
-              <Route path="/exams" element={<ExamsPage />} />
-              <Route path="/resources" element={<ResourcesPage />} />
-              <Route path="/progress" element={<ProgressPage />} />
-              <Route path="/flashcards" element={<FlashcardsPage />} />
-              <Route path="/admin" element={<AdminPage />} />
-              <Route path="/reset-password" element={<ResetPasswordPage />} />
-              <Route path="/verify-email" element={<VerifyEmailPage />} />
-              <Route path="/translate" element={<TranslatorPage />} />
-              <Route path="/profile" element={<ProfilePage />} />
-            </Routes>
-          </Layout>
-        </AppProvider>
-      </AuthProvider>
-      </DialogProvider>
+      <ToastProvider>
+        <DialogProvider>
+          <AuthProvider>
+            <AppProvider>
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/lesson/:slug" element={<LessonPage />} />
+                  <Route path="/exams" element={<ExamsPage />} />
+                  <Route path="/resources" element={<ResourcesPage />} />
+                  <Route path="/progress" element={<ProgressPage />} />
+                  <Route path="/flashcards" element={<FlashcardsPage />} />
+                  <Route path="/admin" element={<AdminPage />} />
+                  <Route path="/reset-password" element={<ResetPasswordPage />} />
+                  <Route path="/verify-email" element={<VerifyEmailPage />} />
+                  <Route path="/translate" element={<TranslatorPage />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                </Routes>
+              </Layout>
+            </AppProvider>
+          </AuthProvider>
+        </DialogProvider>
+      </ToastProvider>
     </BrowserRouter>
   );
 }

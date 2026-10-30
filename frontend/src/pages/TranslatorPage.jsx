@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ArrowLeftRight, Copy, Check, Volume2, Trash2, Loader2, Languages } from 'lucide-react';
 import { translateText } from '../api';
 import { speak } from '../speech';
+import { useToast } from '../components/Toast';
 
 const MAX_CHARS = 2000;
 const HISTORY_KEY = 'translator_history';
@@ -20,7 +21,7 @@ export default function TranslatorPage() {
   const [text, setText] = useState('');
   const [result, setResult] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const toast = useToast();
   const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState(loadHistory);
 
@@ -32,14 +33,14 @@ export default function TranslatorPage() {
   const handleTranslate = async () => {
     const input = text.trim();
     if (!input || loading) return;
-    setLoading(true); setError(''); setCopied(false);
+    setLoading(true); setCopied(false);
     try {
       const res = await translateText({ text: input, from, to });
       setResult(res.data.translation);
       const entry = { from, to, text: input, translation: res.data.translation };
       saveHistory([entry, ...history.filter(h => !(h.text === input && h.from === from))].slice(0, 10));
     } catch (e) {
-      setError(e.response?.data?.error || 'Translation failed. Please try again.');
+      toast.error(e.response?.data?.error || 'Translation failed. Please try again.');
     } finally { setLoading(false); }
   };
 
@@ -52,7 +53,7 @@ export default function TranslatorPage() {
     try { await navigator.clipboard.writeText(result); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
   };
 
-  const restore = (h) => { setFrom(h.from); setText(h.text); setResult(h.translation); setError(''); };
+  const restore = (h) => { setFrom(h.from); setText(h.text); setResult(h.translation); };
 
   return (
     <div className="space-y-6">
@@ -96,7 +97,7 @@ export default function TranslatorPage() {
               <span>{text.length}/{MAX_CHARS} · Ctrl+Enter to translate</span>
               <div className="flex gap-2">
                 {text && <button onClick={() => speak(text, LANG[from].voice)} className="hover:text-yellow-500" title="Listen"><Volume2 size={16} /></button>}
-                {text && <button onClick={() => { setText(''); setResult(''); setError(''); }} className="hover:text-red-500" title="Clear"><Trash2 size={16} /></button>}
+                {text && <button onClick={() => { setText(''); setResult(''); }} className="hover:text-red-500" title="Clear"><Trash2 size={16} /></button>}
               </div>
             </div>
           </div>
@@ -119,8 +120,6 @@ export default function TranslatorPage() {
             )}
           </div>
         </div>
-
-        {error && <p className="text-red-500 text-sm">{error}</p>}
 
         <button className="btn-primary w-full py-3 text-base flex items-center justify-center gap-2"
           onClick={handleTranslate} disabled={loading || !text.trim()}>

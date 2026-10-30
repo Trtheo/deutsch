@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { searchLessons, getAILessons, deleteLesson, uploadResource, getLessons } from '../api';
 import { LevelBadge, ConfirmDelete } from '../components/UI';
+import { useToast } from '../components/Toast';
 import { Search, BookOpen, Paperclip, Trash2, CheckCircle2, Upload, BookMarked, Brain, Loader2, SearchX } from 'lucide-react';
 
 // Quick suggestions: everyday situations learners search for most
@@ -9,7 +10,7 @@ const SUGGESTIONS = ['doctor', 'Apotheke', 'train', 'shopping', 'Wohnung', 'job 
 
 export default function ResourcesPage() {
   const [activeTab, setActiveTab] = useState('search');
-  const [error, setError] = useState('');
+  const toast = useToast();
 
   // Topic search
   const [query, setQuery] = useState('');
@@ -27,7 +28,6 @@ export default function ResourcesPage() {
   const [uploadUrl, setUploadUrl] = useState('');
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadDone, setUploadDone] = useState(false);
   const fileRef = useRef();
 
   useEffect(() => {
@@ -40,13 +40,13 @@ export default function ResourcesPage() {
 
   const runSearch = async (q = query) => {
     const term = q.trim();
-    if (term.length < 2) return setError('Type at least 2 letters.');
-    setQuery(term); setSearching(true); setError('');
+    if (term.length < 2) return toast.error('Type at least 2 letters.');
+    setQuery(term); setSearching(true);
     try {
       const res = await searchLessons(term);
       setResults(res.data);
     } catch (e) {
-      setError(e.response?.data?.error || 'Search failed. Please try again.');
+      toast.error(e.response?.data?.error || 'Search failed. Please try again.');
     } finally { setSearching(false); }
   };
 
@@ -54,14 +54,15 @@ export default function ResourcesPage() {
     try {
       await deleteLesson(slug);
       setSavedLessons(prev => prev.filter(l => l.slug !== slug));
+      toast.success('Lesson deleted.');
     } catch (e) {
-      setError(e.response?.data?.error || 'Delete failed.');
+      toast.error(e.response?.data?.error || 'Delete failed.');
     }
     setDeleteSlug(null);
   };
 
   const handleUpload = async () => {
-    if (!uploadTitle || !uploadSlug) return setError('Select a lesson and add a title');
+    if (!uploadTitle || !uploadSlug) return toast.error('Select a lesson and add a title.');
     setUploading(true);
     const fd = new FormData();
     fd.append('title', uploadTitle);
@@ -69,10 +70,9 @@ export default function ResourcesPage() {
     if (uploadFile) fd.append('file', uploadFile);
     try {
       await uploadResource(uploadSlug, fd);
-      setUploadDone(true);
+      toast.success('Resource uploaded!');
       setUploadTitle(''); setUploadUrl(''); setUploadFile(null);
-      setTimeout(() => setUploadDone(false), 3000);
-    } catch (e) { setError(e.response?.data?.error || 'Upload failed.'); }
+    } catch (e) { toast.error(e.response?.data?.error || 'Upload failed.'); }
     setUploading(false);
   };
 
@@ -93,7 +93,7 @@ export default function ResourcesPage() {
 
       <div className="flex gap-2 border-b border-gray-200 dark:border-gray-800">
         {tabs.map(t => (
-          <button key={t.id} onClick={() => { setActiveTab(t.id); setError(''); }}
+          <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5
               ${activeTab === t.id
                 ? 'border-yellow-400 text-yellow-600 dark:text-yellow-400'
@@ -102,8 +102,6 @@ export default function ResourcesPage() {
           </button>
         ))}
       </div>
-
-      {error && <p className="text-red-500 text-sm">{error}</p>}
 
       {/* Find a topic */}
       {activeTab === 'search' && (
@@ -236,11 +234,6 @@ export default function ResourcesPage() {
           <button className="btn-primary w-full flex items-center justify-center gap-2" onClick={handleUpload} disabled={uploading}>
             <Upload size={15} /> {uploading ? 'Uploading...' : 'Upload resource'}
           </button>
-          {uploadDone && (
-            <div className="bg-green-50 dark:bg-green-500/5 border border-green-200 dark:border-green-500/20 rounded-xl p-3 text-green-600 dark:text-green-400 text-sm flex items-center gap-2">
-              <CheckCircle2 size={15} /> Resource uploaded!
-            </div>
-          )}
         </div>
       )}
     </div>

@@ -45,6 +45,7 @@ test('an admin can deactivate and reactivate a user, with a confirmation each ti
 
   expect(api.adminSetUserStatus).toHaveBeenLastCalledWith('u2', false);
   expect(within(row).getByText('Deactivated')).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('anna has been deactivated.');
 
   fireEvent.click(within(row).getByText('Activate'));
   await act(async () => fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Activate')));

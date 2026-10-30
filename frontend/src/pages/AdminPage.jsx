@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { adminGetUsers, adminUpdateRole, adminSetUserStatus, adminDeleteUser, adminGetContacts, adminMarkRead, adminDeleteContact, adminBroadcast, adminGetAnalytics } from '../api';
 import { Trash2, ShieldCheck, ShieldOff, AlertCircle, MessageSquare, Users, Mail, MailOpen, Send, CheckCircle2, BarChart2, TrendingUp, BookOpen, MessageCircle, Star, ClipboardList } from 'lucide-react';
 import { useDialog } from '../components/Dialog';
+import { useToast } from '../components/Toast';
 
 const TYPE_COLORS = {
   Support:     'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400',
@@ -14,12 +15,12 @@ const TYPE_COLORS = {
 export default function AdminPage() {
   const { user } = useAuth();
   const { confirm } = useDialog();
+  const toast = useToast();
   const [tab, setTab] = useState('users');
 
   // Users
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(true);
-  const [usersError, setUsersError] = useState('');
 
   // Contacts
   const [contacts, setContacts] = useState([]);
@@ -34,18 +35,17 @@ export default function AdminPage() {
   const [bcast, setBcast] = useState({ subject: '', message: '', userIds: [] });
   const [bcastStatus, setBcastStatus] = useState(''); // '' | 'sending' | 'done' | 'error'
   const [bcastResult, setBcastResult] = useState(null);
-  const [bcastError, setBcastError] = useState('');
 
   useEffect(() => {
     adminGetUsers()
       .then(r => setUsers(r.data))
-      .catch(e => setUsersError(e.response?.data?.error || 'Failed to load users'))
+      .catch(e => toast.error(e.response?.data?.error || 'Failed to load users'))
       .finally(() => setUsersLoading(false));
     adminGetContacts()
       .then(r => setContacts(r.data))
       .catch(() => {})
       .finally(() => setContactsLoading(false));
-  }, []);
+  }, [toast]); // toast is stable, so this still runs once
 
   useEffect(() => {
     if (tab === 'analytics' && !analytics) {
@@ -62,7 +62,8 @@ export default function AdminPage() {
     try {
       const res = await adminUpdateRole(u._id, newRole);
       setUsers(prev => prev.map(x => x._id === u._id ? res.data : x));
-    } catch (e) { setUsersError(e.response?.data?.error || 'Failed to update role'); }
+      toast.success(newRole === 'admin' ? `${u.username} is now an admin.` : `${u.username} is no longer an admin.`);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to update role'); }
   };
 
   const toggleStatus = async (u) => {
@@ -76,7 +77,8 @@ export default function AdminPage() {
     try {
       const res = await adminSetUserStatus(u._id, activating);
       setUsers(prev => prev.map(x => x._id === u._id ? res.data : x));
-    } catch (e) { setUsersError(e.response?.data?.error || 'Failed to update the account'); }
+      toast.success(activating ? `${u.username} has been activated.` : `${u.username} has been deactivated.`);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to update the account'); }
   };
 
   const deleteUser = async (u) => {
@@ -89,7 +91,8 @@ export default function AdminPage() {
     try {
       await adminDeleteUser(u._id);
       setUsers(prev => prev.filter(x => x._id !== u._id));
-    } catch (e) { setUsersError(e.response?.data?.error || 'Failed to delete user'); }
+      toast.success(`${u.username} has been deleted.`);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to delete user'); }
   };
 
   const handleExpand = async (c) => {
@@ -113,18 +116,20 @@ export default function AdminPage() {
       await adminDeleteContact(c._id);
       setContacts(prev => prev.filter(x => x._id !== c._id));
       if (expanded === c._id) setExpanded(null);
-    } catch {}
+      toast.success('Message deleted.');
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to delete message'); }
   };
 
   const handleBroadcast = async () => {
-    if (!bcast.subject || !bcast.message) return setBcastError('Subject and message are required.');
-    setBcastStatus('sending'); setBcastError('');
+    if (!bcast.subject || !bcast.message) return toast.error('Subject and message are required.');
+    setBcastStatus('sending');
     try {
       const res = await adminBroadcast(bcast);
       setBcastResult(res.data);
       setBcastStatus('done');
+      toast.success(`Broadcast sent to ${res.data.sent} of ${res.data.total} users.`);
     } catch (e) {
-      setBcastError(e.response?.data?.error || 'Failed to send.');
+      toast.error(e.response?.data?.error || 'Failed to send.');
       setBcastStatus('error');
     }
   };
@@ -185,11 +190,6 @@ export default function AdminPage() {
       {/* ── Users Tab ── */}
       {tab === 'users' && (
         <>
-          {usersError && (
-            <div className="flex items-center gap-2 text-sm bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl px-3 py-2">
-              <AlertCircle size={15} /> {usersError}
-            </div>
-          )}
           {usersLoading ? (
             <p className="text-gray-400 text-sm">Loading...</p>
           ) : (
@@ -481,12 +481,6 @@ export default function AdminPage() {
                     value={bcast.message}
                     onChange={e => setBcast(b => ({ ...b, message: e.target.value }))} />
                 </div>
-                {bcastError && (
-                  <div className="flex items-center gap-2 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl px-3 py-2">
-                    <span className="text-red-500">✕</span>
-                    <p className="text-red-600 dark:text-red-400 text-sm">{bcastError}</p>
-                  </div>
-                )}
                 <button className="btn-primary w-full flex items-center justify-center gap-2"
                   onClick={handleBroadcast} disabled={bcastStatus === 'sending'}>
                   <Send size={15} />

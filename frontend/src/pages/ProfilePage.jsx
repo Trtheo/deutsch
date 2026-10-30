@@ -1,30 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { getMe } from '../api';
+import { useToast } from '../components/Toast';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 
-import { Star, Flame, CheckCircle2, LogOut, Save, KeyRound, AlertCircle, CheckCircle, Eye, EyeOff, User } from 'lucide-react';
+import { Star, Flame, CheckCircle2, LogOut, Save, KeyRound, Eye, EyeOff, User } from 'lucide-react';
 import LESSONS from '../lessons';
 
 const AVATARS = ['🧑','👩','👨','🧑‍💻','👩‍💻','👨‍💻','🧑‍🎓','👩‍🎓','👨‍🎓','🦊','🐼','🦁','🐸','🤖','👾','🎓','⭐'];
 
-function Msg({ msg }) {
-  if (!msg) return null;
-  return (
-    <div className={`flex items-center gap-2 text-sm rounded-xl px-3 py-2 ${
-      msg.type === 'ok'
-        ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400'
-        : 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400'
-    }`}>
-      {msg.type === 'ok' ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
-      {msg.text}
-    </div>
-  );
-}
-
 export default function ProfilePage() {
   const { user, logout, saveProfile, savePassword } = useAuth();
   const { totalXP, streak, getLessonStatus } = useApp();
+  const toast = useToast();
 
   const [firstName, setFirstName] = useState(user.firstName || '');
   const [lastName,  setLastName]  = useState(user.lastName  || '');
@@ -32,14 +20,12 @@ export default function ProfilePage() {
   const [level,     setLevel]     = useState(user.level);
   const [avatar,    setAvatar]    = useState(user.avatar || '🧑');
   const [bio,       setBio]       = useState(user.bio || '');
-  const [profileMsg,     setProfileMsg]     = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
   const [curPw,     setCurPw]     = useState('');
   const [newPw,     setNewPw]     = useState('');
   const [showCur,   setShowCur]   = useState(false);
   const [showNew,   setShowNew]   = useState(false);
-  const [pwMsg,     setPwMsg]     = useState(null);
   const [pwLoading, setPwLoading] = useState(false);
 
   const completed = LESSONS.filter(l => getLessonStatus(l.slug) === 'completed').length;
@@ -51,26 +37,26 @@ export default function ProfilePage() {
   }, []);
 
   const handleSaveProfile = async () => {
-    if (!username.trim()) return setProfileMsg({ type: 'err', text: 'Username cannot be empty.' });
-    setProfileLoading(true); setProfileMsg(null);
+    if (!username.trim()) return toast.error('Username cannot be empty.');
+    setProfileLoading(true);
     try {
       await saveProfile({ firstName: firstName.trim(), lastName: lastName.trim(), username: username.trim(), level, avatar, bio });
-      setProfileMsg({ type: 'ok', text: 'Profile updated successfully!' });
+      toast.success('Profile updated successfully!');
     } catch (e) {
-      setProfileMsg({ type: 'err', text: e.response?.data?.error || 'Failed to save profile.' });
+      toast.error(e.response?.data?.error || 'Failed to save profile.');
     } finally { setProfileLoading(false); }
   };
 
   const handleChangePassword = async () => {
-    if (!curPw || !newPw) return setPwMsg({ type: 'err', text: 'Both fields are required.' });
-    if (newPw.length < 6) return setPwMsg({ type: 'err', text: 'New password must be at least 6 characters.' });
-    setPwLoading(true); setPwMsg(null);
+    if (!curPw || !newPw) return toast.error('Both password fields are required.');
+    if (newPw.length < 6) return toast.error('New password must be at least 6 characters.');
+    setPwLoading(true);
     try {
       await savePassword({ currentPassword: curPw, newPassword: newPw });
-      setPwMsg({ type: 'ok', text: 'Password changed successfully!' });
+      toast.success('Password changed successfully!');
       setCurPw(''); setNewPw('');
     } catch (e) {
-      setPwMsg({ type: 'err', text: e.response?.data?.error || 'Failed to change password.' });
+      toast.error(e.response?.data?.error || 'Failed to change password.');
     } finally { setPwLoading(false); }
   };
 
@@ -193,7 +179,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <Msg msg={profileMsg} />
         <button className="btn-primary flex items-center gap-2" onClick={handleSaveProfile} disabled={profileLoading}>
           <Save size={15} /> {profileLoading ? 'Saving...' : 'Save Profile'}
         </button>
@@ -225,7 +210,6 @@ export default function ProfilePage() {
             </button>
           </div>
         </div>
-        <Msg msg={pwMsg} />
         <button className="btn-secondary flex items-center gap-2" onClick={handleChangePassword} disabled={pwLoading}>
           <KeyRound size={15} /> {pwLoading ? 'Updating...' : 'Change Password'}
         </button>

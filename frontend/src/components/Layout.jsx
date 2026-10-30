@@ -10,6 +10,7 @@ import {
   FileText, Zap, BookMarked, PenLine, Headphones, Mic, Clock,
   Sun, Moon, Flame, Star, LogOut, BookOpenCheck, WifiOff, Layers, Bell, BellOff, ShieldCheck, MessageSquare, X, Search, Languages, UserCog
 } from 'lucide-react';
+import { useToast } from './Toast';
 import { isSupported, requestPermission, scheduleDailyReminder, cancelDailyReminder, getNotifSettings } from '../notifications';
 
 const bottomTabs = [
@@ -66,8 +67,8 @@ export default function Layout({ children }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [contactForm, setContactForm] = useState({ name: '', email: '', type: 'Support', message: '' });
-  const [contactStatus, setContactStatus] = useState(''); // '' | 'loading' | 'success' | 'error'
-  const [contactError, setContactError] = useState('');
+  const [contactSending, setContactSending] = useState(false);
+  const toast = useToast();
   const { pathname } = useLocation();
   const { totalXP, streak, darkMode, setDarkMode, isOnline } = useApp();
   const { user, logout } = useAuth();
@@ -75,17 +76,19 @@ export default function Layout({ children }) {
 
   const openContact = () => {
     setContactForm({ name: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || user?.username || '', email: user?.email || '', type: 'Support', message: '' });
-    setContactStatus(''); setContactError('');
     setContactOpen(true);
   };
 
   const handleContact = async () => {
-    if (!contactForm.name || !contactForm.email || !contactForm.message) return setContactError('All fields are required.');
-    setContactStatus('loading'); setContactError('');
+    if (!contactForm.name || !contactForm.email || !contactForm.message) return toast.error('Please fill in your name, email and message.');
+    setContactSending(true);
     try {
       await sendContact(contactForm);
-      setContactStatus('success');
-    } catch (e) { setContactStatus('error'); setContactError(e.response?.data?.error || 'Failed to send. Try again.'); }
+      setContactOpen(false);
+      toast.success(`Message sent! We'll get back to you at ${contactForm.email}.`);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to send. Try again.');
+    } finally { setContactSending(false); }
   };
 
   const [notifEnabled, setNotifEnabled] = useState(() => getNotifSettings()?.enabled || false);
@@ -402,15 +405,6 @@ export default function Layout({ children }) {
               </button>
             </div>
 
-            {contactStatus === 'success' ? (
-              <div className="text-center py-6 space-y-2">
-                <div className="text-4xl">🎉</div>
-                <p className="text-green-600 dark:text-green-400 font-semibold">Message sent!</p>
-                <p className="text-gray-500 dark:text-gray-400 text-sm">We'll get back to you at {contactForm.email}</p>
-                <button className="btn-secondary mt-2" onClick={() => setContactOpen(false)}>Close</button>
-              </div>
-            ) : (
-              <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-gray-500 dark:text-gray-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Name</label>
@@ -445,20 +439,12 @@ export default function Layout({ children }) {
                     value={contactForm.message}
                     onChange={e => setContactForm(f => ({ ...f, message: e.target.value }))} />
                 </div>
-                {contactError && (
-                  <div className="flex items-center gap-2 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl px-3 py-2">
-                    <span className="text-red-500">✕</span>
-                    <p className="text-red-600 dark:text-red-400 text-sm">{contactError}</p>
-                  </div>
-                )}
                 <div className="flex gap-3">
                   <button className="btn-secondary flex-1" onClick={() => setContactOpen(false)}>Cancel</button>
-                  <button className="btn-primary flex-1" onClick={handleContact} disabled={contactStatus === 'loading'}>
-                    {contactStatus === 'loading' ? 'Sending...' : 'Send Message'}
+                  <button className="btn-primary flex-1" onClick={handleContact} disabled={contactSending}>
+                    {contactSending ? 'Sending...' : 'Send Message'}
                   </button>
                 </div>
-              </>
-            )}
           </div>
         </div>
       )}

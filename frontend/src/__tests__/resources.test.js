@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import * as api from '../api';
 import ResourcesPage from '../pages/ResourcesPage';
+import { ToastProvider } from '../components/Toast';
 
 jest.mock('../api');
 beforeEach(() => {
@@ -10,7 +11,7 @@ beforeEach(() => {
   api.getLessons.mockResolvedValue({ data: [] });
 });
 
-const renderPage = () => render(<MemoryRouter><ResourcesPage /></MemoryRouter>);
+const renderPage = () => render(<ToastProvider><MemoryRouter><ResourcesPage /></MemoryRouter></ToastProvider>);
 
 test('searching a topic lists matching lessons with their words', async () => {
   api.searchLessons.mockResolvedValue({ data: [

@@ -1,13 +1,14 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import * as api from '../api';
 import TranslatorPage from '../pages/TranslatorPage';
+import { ToastProvider } from '../components/Toast';
 
 jest.mock('../api');
 beforeEach(() => { localStorage.clear(); jest.resetAllMocks(); });
 
 test('translates English to German and remembers it', async () => {
   api.translateText.mockResolvedValue({ data: { translation: 'Wo ist der Bahnhof?' } });
-  render(<TranslatorPage />);
+  render(<ToastProvider><TranslatorPage /></ToastProvider>);
   fireEvent.change(screen.getByLabelText('Text in English'), { target: { value: 'Where is the train station?' } });
   fireEvent.click(screen.getByText('Translate to German'));
 
@@ -19,7 +20,7 @@ test('translates English to German and remembers it', async () => {
 
 test('swapping translates German to English', async () => {
   api.translateText.mockResolvedValue({ data: { translation: 'Good morning' } });
-  render(<TranslatorPage />);
+  render(<ToastProvider><TranslatorPage /></ToastProvider>);
   fireEvent.click(screen.getByLabelText('Swap languages'));
   fireEvent.change(screen.getByLabelText('Text in German'), { target: { value: 'Guten Morgen' } });
   fireEvent.click(screen.getByText('Translate to English'));
@@ -29,7 +30,7 @@ test('swapping translates German to English', async () => {
 
 test('shows the server error message', async () => {
   api.translateText.mockRejectedValue({ response: { data: { error: 'Translation limit reached. Please wait a few minutes.' } } });
-  render(<TranslatorPage />);
+  render(<ToastProvider><TranslatorPage /></ToastProvider>);
   fireEvent.change(screen.getByLabelText('Text in English'), { target: { value: 'Hello' } });
   fireEvent.click(screen.getByText('Translate to German'));
   expect(await screen.findByText(/Translation limit reached/)).toBeInTheDocument();
