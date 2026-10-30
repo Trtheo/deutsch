@@ -10,6 +10,16 @@ root.render(<React.StrictMode><App /></React.StrictMode>);
 
 // Register service worker
 if ('serviceWorker' in navigator) {
+  // When a new version of the app takes over, reload once so the user sees it.
+  // Skipped on the very first visit (there was no previous version).
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   });

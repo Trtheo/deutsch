@@ -1,5 +1,5 @@
-const CACHE = 'deutsch-lernen-v2'; // bump to replace cached icons and the app shell for returning users
-const API_CACHE = 'deutsch-api-v1';
+const CACHE = 'deutsch-lernen-v3'; // bump to clear old caches for returning users
+const API_CACHE = 'deutsch-api-v2'; // v2: only lesson content (v1 also held personal data)
 
 // App shell files to pre-cache on install
 const SHELL = [
@@ -25,6 +25,10 @@ self.addEventListener('activate', e => {
 });
 
 // ── Fetch strategy ────────────────────────────────────────
+// Pages: network first, so a new deploy reaches users right away (cache only when offline).
+// /static/ build files: cache first (their names change with every build).
+// Other files: cached copy at once, refreshed in the background.
+// API: only lesson content is cached, for offline reading; personal data never is.
 self.addEventListener('fetch', e => {
   const { request } = e;
   const url = new URL(request.url);
@@ -32,13 +36,12 @@ self.addEventListener('fetch', e => {
   // Skip non-GET and chrome-extension requests
   if (request.method !== 'GET' || url.protocol === 'chrome-extension:') return;
 
-  // API calls: network-first, fall back to API cache
   if (url.pathname.startsWith('/api/')) {
+    if (!url.pathname.startsWith('/api/lessons')) return; // let the browser handle it, uncached
     e.respondWith(
       fetch(request)
         .then(res => {
-          const clone = res.clone();
-          caches.open(API_CACHE).then(c => c.put(request, clone));
+          if (res.ok) { const clone = res.clone(); caches.open(API_CACHE).then(c => c.put(request, clone)); }
           return res;
         })
         .catch(() => caches.match(request))
@@ -46,19 +49,37 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // App shell / static assets: cache-first, fall back to network, then offline page
-  e.respondWith(
-    caches.match(request).then(cached => {
-      if (cached) return cached;
-      return fetch(request)
+  if (url.origin !== self.location.origin) return;
+
+  if (request.mode === 'navigate') {
+    e.respondWith(
+      fetch(request)
         .then(res => {
-          // Cache successful static responses
-          if (res.ok && (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.png') || url.pathname.endsWith('.ico') || url.pathname.endsWith('.svg'))) {
-            caches.open(CACHE).then(c => c.put(request, res.clone()));
-          }
+          if (res.ok) { const clone = res.clone(); caches.open(CACHE).then(c => c.put('/index.html', clone)); }
           return res;
         })
-        .catch(() => caches.match('/offline.html'));
+        .catch(() => caches.match('/index.html').then(cached => cached || caches.match('/offline.html')))
+    );
+    return;
+  }
+
+  if (url.pathname.startsWith('/static/')) {
+    e.respondWith(
+      caches.match(request).then(cached => cached || fetch(request).then(res => {
+        if (res.ok) { const clone = res.clone(); caches.open(CACHE).then(c => c.put(request, clone)); }
+        return res;
+      }))
+    );
+    return;
+  }
+
+  e.respondWith(
+    caches.match(request).then(cached => {
+      const fresh = fetch(request).then(res => {
+        if (res.ok) { const clone = res.clone(); caches.open(CACHE).then(c => c.put(request, clone)); }
+        return res;
+      }).catch(() => cached);
+      return cached || fresh;
     })
   );
 });

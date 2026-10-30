@@ -11,6 +11,7 @@ import {
   Sun, Moon, Flame, Star, LogOut, BookOpenCheck, WifiOff, Layers, Bell, BellOff, ShieldCheck, MessageSquare, X, Search, Languages, UserCog
 } from 'lucide-react';
 import { useToast } from './Toast';
+import MyProfileModal from './MyProfileModal';
 import { isSupported, requestPermission, scheduleDailyReminder, cancelDailyReminder, getNotifSettings } from '../notifications';
 
 const bottomTabs = [
@@ -64,6 +65,7 @@ const navGroups = [
 
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [contactForm, setContactForm] = useState({ name: '', email: '', type: 'Support', message: '' });
@@ -255,10 +257,10 @@ export default function Layout({ children }) {
           className="w-full flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 hover:text-yellow-600 dark:hover:text-yellow-400 transition-colors py-1">
           <MessageSquare size={13} /> Contact / Feedback
         </button>
-        {/* Account card: opens profile management */}
-        <Link to="/profile" onClick={() => setSidebarOpen(false)}
+        {/* Account card: opens the "My profile" popup */}
+        <button type="button" onClick={() => { setSidebarOpen(false); setProfileOpen(true); }}
           aria-label="Open my profile"
-          className={`group flex items-center gap-3 rounded-2xl p-3 bg-gradient-to-br from-blue-600 to-emerald-500 text-white shadow-md
+          className={`group w-full text-left flex items-center gap-3 rounded-2xl p-3 bg-gradient-to-br from-blue-600 to-emerald-500 text-white shadow-md
             hover:shadow-lg hover:brightness-110 transition-all ${pathname === '/profile' ? 'ring-2 ring-yellow-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : ''}`}>
           <span className="w-10 h-10 rounded-full bg-white/20 ring-2 ring-white/40 flex items-center justify-center text-xl flex-shrink-0">
             {user?.avatar || '🧑'}
@@ -272,7 +274,7 @@ export default function Layout({ children }) {
             </span>
           </span>
           <UserCog size={18} className="text-white/80 group-hover:text-white flex-shrink-0" />
-        </Link>
+        </button>
         <button onClick={logout}
           className="w-full text-xs text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex items-center justify-center gap-1 py-1">
           <LogOut size={13} /> Logout
@@ -343,10 +345,10 @@ export default function Layout({ children }) {
             </button>
             <span className="flex items-center gap-1 text-xs bg-orange-100 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 px-2 py-1 rounded-full"><Flame size={11} /> {streak}</span>
             <span className="flex items-center gap-1 text-xs bg-yellow-100 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 px-2 py-1 rounded-full"><Star size={11} /> {totalXP}</span>
-            <Link to="/profile" aria-label="Open my profile" title={displayName}
+            <button type="button" onClick={() => setProfileOpen(true)} aria-label="Open my profile" title={displayName}
               className="w-8 h-8 rounded-full flex items-center justify-center text-base bg-gradient-to-br from-blue-600 to-emerald-500 ring-2 ring-white dark:ring-gray-900 shadow">
               {user?.avatar || '🧑'}
-            </Link>
+            </button>
             <button
               onClick={() => setDarkMode(d => !d)}
               className="w-8 h-8 rounded-xl flex items-center justify-center
@@ -448,6 +450,7 @@ export default function Layout({ children }) {
           </div>
         </div>
       )}
+      {profileOpen && <MyProfileModal onClose={() => setProfileOpen(false)} />}
     </div>
   );
 }
