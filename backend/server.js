@@ -385,10 +385,86 @@ app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, async (req, re
 });
 
 // ── Admin routes ──────────────────────────────────────────
+const USER_SORTS = {
+  newest: { createdAt: -1 },
+  oldest: { createdAt: 1 },
+  name: { username: 1 },
+  'name-desc': { username: -1 },
+  email: { email: 1 },
+  level: { level: 1, username: 1 },
+};
+const escapeRegex = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Without ?page: the full list (used for choosing broadcast recipients).
+// With ?page: search, filters, sorting and pagination for the users table.
 app.get('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const users = await User.find().select(PRIVATE_USER_FIELDS).sort({ createdAt: -1 });
-    res.json(users);
+    if (req.query.page === undefined) {
+      const users = await User.find().select(PRIVATE_USER_FIELDS).sort({ createdAt: -1 });
+      return res.json(users);
+    }
+    const { q = '', role, status, level, verified, sort = 'newest' } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(5, parseInt(req.query.limit, 10) || 10));
+
+    const filter = {};
+    const term = String(q).trim().slice(0, 80);
+    if (term) {
+      const rx = new RegExp(escapeRegex(term), 'i');
+      filter.$or = [{ username: rx }, { email: rx }, { firstName: rx }, { lastName: rx }];
+    }
+    if (['user', 'admin'].includes(role)) filter.role = role;
+    if (status === 'active') filter.deactivated = { $ne: true };
+    if (status === 'deactivated') filter.deactivated = true;
+    if (['A1', 'A2', 'B1', 'B2'].includes(level)) filter.level = level;
+    if (verified === 'no') filter.emailVerified = false;
+    if (verified === 'yes') filter.emailVerified = { $ne: false };
+
+    const [users, total, all, deactivated, admins, unverified] = await Promise.all([
+      User.find(filter).select(PRIVATE_USER_FIELDS)
+        .sort(USER_SORTS[sort] || USER_SORTS.newest)
+        .collation({ locale: 'en', strength: 2 }) // case-insensitive name sorting
+        .skip((page - 1) * limit).limit(limit),
+      User.countDocuments(filter),
+      User.countDocuments({}),
+      User.countDocuments({ deactivated: true }),
+      User.countDocuments({ role: 'admin' }),
+      User.countDocuments({ emailVerified: false }),
+    ]);
+    res.json({
+      users, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)),
+      counts: { all, active: all - deactivated, deactivated, admins, unverified },
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// One user with their learning statistics, for the details popup
+app.get('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: 'User not found' });
+    const user = await User.findById(req.params.id).select(PRIVATE_USER_FIELDS).lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const [progress, comments] = await Promise.all([
+      Progress.find({ userId: String(user._id) }).lean(),
+      Comment.countDocuments({ userId: String(user._id) }),
+    ]);
+    const scores = progress.flatMap(p => p.examScores || [])
+      .map(s => (s.total > 0 ? Math.round((s.score / s.total) * 100) : null))
+      .filter(v => v !== null);
+    const lastActivity = progress.reduce((latest, p) => (p.lastActivity && (!latest || p.lastActivity > latest) ? p.lastActivity : latest), null);
+    res.json({
+      ...user,
+      stats: {
+        xp: progress.reduce((sum, p) => sum + (p.xp || 0), 0),
+        lessonsCompleted: progress.filter(p => p.status === 'completed').length,
+        lessonsInProgress: progress.filter(p => p.status === 'in_progress').length,
+        examsTaken: scores.length,
+        averageScore: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+        bestScore: scores.length ? Math.max(...scores) : null,
+        comments,
+        lastActivity,
+      },
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -265,6 +265,84 @@ describe('deactivating users', () => {
   });
 });
 
+describe('admin users table', () => {
+  async function seedUsers() {
+    const admin = await registerUser({ username: 'boss', email: 'boss@example.com' });
+    const adminToken = await makeAdmin(admin);
+    const bcrypt = require('bcryptjs');
+    const hash = await bcrypt.hash('secret123', 4);
+    const people = Array.from({ length: 12 }, (_, i) => ({
+      username: `student${String(i).padStart(2, '0')}`, email: `student${i}@school.de`, password: hash,
+      firstName: i === 3 ? 'Zoë' : 'Max', level: i < 4 ? 'B1' : 'A1', deactivated: i % 5 === 0,
+      createdAt: new Date(2026, 0, i + 1),
+    }));
+    await User.insertMany(people);
+    return { adminToken };
+  }
+  const list = (token, query) => request(app).get('/api/admin/users').query(query).set(auth(token));
+
+  test('paginates with totals and counts', async () => {
+    const { adminToken } = await seedUsers();
+    const res = await list(adminToken, { page: 1, limit: 5 });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.users.length, 5);
+    assert.equal(res.body.total, 13);
+    assert.equal(res.body.pages, 3);
+    assert.deepEqual(res.body.counts, { all: 13, active: 10, deactivated: 3, admins: 1, unverified: 0 });
+    const last = await list(adminToken, { page: 3, limit: 5 });
+    assert.equal(last.body.users.length, 3);
+    assert.equal(last.body.users[0].password, undefined);
+  });
+
+  test('searches by name, username and email, safely', async () => {
+    const { adminToken } = await seedUsers();
+    assert.equal((await list(adminToken, { page: 1, q: 'zoë' })).body.total, 1);
+    assert.equal((await list(adminToken, { page: 1, q: 'school.de' })).body.total, 12);
+    assert.equal((await list(adminToken, { page: 1, q: 'student0' })).body.total, 10);
+    assert.equal((await list(adminToken, { page: 1, q: '.*(' })).status, 200); // regex characters are escaped
+  });
+
+  test('filters by role, status and level, and sorts', async () => {
+    const { adminToken } = await seedUsers();
+    assert.equal((await list(adminToken, { page: 1, role: 'admin' })).body.total, 1);
+    assert.equal((await list(adminToken, { page: 1, status: 'deactivated' })).body.total, 3);
+    assert.equal((await list(adminToken, { page: 1, status: 'active', level: 'B1' })).body.total, 3);
+    const byName = await list(adminToken, { page: 1, limit: 3, sort: 'name' });
+    assert.equal(byName.body.limit, 5, 'page size is at least 5');
+    assert.deepEqual(byName.body.users.slice(0, 3).map(u => u.username), ['boss', 'student00', 'student01']);
+    const oldest = await list(adminToken, { page: 1, limit: 1, sort: 'oldest' });
+    assert.equal(oldest.body.users[0].username, 'student00');
+  });
+
+  test('without page it still returns the plain list (broadcast recipients)', async () => {
+    const { adminToken } = await seedUsers();
+    const res = await request(app).get('/api/admin/users').set(auth(adminToken));
+    assert.ok(Array.isArray(res.body));
+    assert.equal(res.body.length, 13);
+  });
+
+  test('user details include learning statistics', async () => {
+    const admin = await registerUser({ username: 'boss', email: 'boss@example.com' });
+    const adminToken = await makeAdmin(admin);
+    const anna = await registerUser();
+    await request(app).post('/api/progress').set(auth(anna.token)).send({ lessonSlug: 'alphabet', status: 'completed', xp: 50, examScore: { score: 8, total: 10 } });
+    await request(app).post('/api/progress').set(auth(anna.token)).send({ lessonSlug: 'numbers', status: 'in_progress', xp: 10, examScore: { score: 6, total: 10 } });
+
+    const res = await request(app).get(`/api/admin/users/${anna.user.id}`).set(auth(adminToken));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.username, 'anna');
+    assert.equal(res.body.password, undefined);
+    assert.equal(res.body.verifyTokenHash, undefined);
+    assert.deepEqual({ ...res.body.stats, lastActivity: undefined }, {
+      xp: 60, lessonsCompleted: 1, lessonsInProgress: 1, examsTaken: 2, averageScore: 70, bestScore: 80, comments: 0, lastActivity: undefined,
+    });
+    assert.ok(res.body.stats.lastActivity);
+
+    assert.equal((await request(app).get('/api/admin/users/not-an-id').set(auth(adminToken))).status, 404);
+    assert.equal((await request(app).get(`/api/admin/users/${anna.user.id}`).set(auth(anna.token))).status, 403);
+  });
+});
+
 describe('protected routes require login', () => {
   const routes = [
     ['delete', '/api/lessons/some-slug'],

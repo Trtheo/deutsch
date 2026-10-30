@@ -72,6 +72,8 @@ export const deleteComment = (slug, id)   => api.delete(`/lessons/${slug}/commen
 export const adminGetAnalytics  = ()           => api.get('/admin/analytics');
 export const adminGetUsers      = ()           => api.get('/admin/users');
 export const adminUpdateRole    = (id, role)   => api.put(`/admin/users/${id}/role`, { role });
+export const adminListUsers     = (params)     => api.get('/admin/users', { params }); // paginated: { users, total, pages, counts }
+export const adminGetUser       = (id)         => api.get(`/admin/users/${id}`);       // with learning stats
 export const adminSetUserStatus = (id, active) => api.patch(`/admin/users/${id}/status`, { active });
 export const adminDeleteUser    = (id)         => api.delete(`/admin/users/${id}`);
 export const adminGetContacts   = ()           => api.get('/admin/contacts');

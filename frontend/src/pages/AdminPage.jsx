@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { adminGetUsers, adminUpdateRole, adminSetUserStatus, adminDeleteUser, adminGetContacts, adminMarkRead, adminDeleteContact, adminBroadcast, adminGetAnalytics } from '../api';
-import { Trash2, ShieldCheck, ShieldOff, AlertCircle, MessageSquare, Users, Mail, MailOpen, Send, CheckCircle2, BarChart2, TrendingUp, BookOpen, MessageCircle, Star, ClipboardList } from 'lucide-react';
+import { adminGetUsers, adminGetContacts, adminMarkRead, adminDeleteContact, adminBroadcast, adminGetAnalytics } from '../api';
+import { Trash2, AlertCircle, MessageSquare, Users, Mail, MailOpen, Send, CheckCircle2, BarChart2, TrendingUp, BookOpen, MessageCircle, Star, ClipboardList } from 'lucide-react';
 import { useDialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
+import UsersTable from '../components/admin/UsersTable';
 
 const TYPE_COLORS = {
   Support:     'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400',
@@ -20,7 +21,6 @@ export default function AdminPage() {
 
   // Users
   const [users, setUsers] = useState([]);
-  const [usersLoading, setUsersLoading] = useState(true);
 
   // Contacts
   const [contacts, setContacts] = useState([]);
@@ -36,16 +36,18 @@ export default function AdminPage() {
   const [bcastStatus, setBcastStatus] = useState(''); // '' | 'sending' | 'done' | 'error'
   const [bcastResult, setBcastResult] = useState(null);
 
+  // Full list for the tab badge and broadcast recipients; the table loads its own pages
+  const loadUsers = useCallback(() => {
+    adminGetUsers().then(r => setUsers(r.data)).catch(() => {});
+  }, []);
+
   useEffect(() => {
-    adminGetUsers()
-      .then(r => setUsers(r.data))
-      .catch(e => toast.error(e.response?.data?.error || 'Failed to load users'))
-      .finally(() => setUsersLoading(false));
+    loadUsers();
     adminGetContacts()
       .then(r => setContacts(r.data))
       .catch(() => {})
       .finally(() => setContactsLoading(false));
-  }, [toast]); // toast is stable, so this still runs once
+  }, [loadUsers]);
 
   useEffect(() => {
     if (tab === 'analytics' && !analytics) {
@@ -56,44 +58,6 @@ export default function AdminPage() {
         .finally(() => setAnalyticsLoading(false));
     }
   }, [tab, analytics]);
-
-  const toggleRole = async (u) => {
-    const newRole = u.role === 'admin' ? 'user' : 'admin';
-    try {
-      const res = await adminUpdateRole(u._id, newRole);
-      setUsers(prev => prev.map(x => x._id === u._id ? res.data : x));
-      toast.success(newRole === 'admin' ? `${u.username} is now an admin.` : `${u.username} is no longer an admin.`);
-    } catch (e) { toast.error(e.response?.data?.error || 'Failed to update role'); }
-  };
-
-  const toggleStatus = async (u) => {
-    const activating = !!u.deactivated;
-    const ok = await confirm(activating
-      ? { tone: 'info', title: 'Activate this user?', confirmLabel: 'Activate',
-          message: `${u.username} will be able to log in again with their existing password and progress.` }
-      : { tone: 'warning', title: 'Deactivate this user?', confirmLabel: 'Deactivate',
-          message: `${u.username} will be signed out right away and can’t log in until you activate the account again. Their progress is kept.` });
-    if (!ok) return;
-    try {
-      const res = await adminSetUserStatus(u._id, activating);
-      setUsers(prev => prev.map(x => x._id === u._id ? res.data : x));
-      toast.success(activating ? `${u.username} has been activated.` : `${u.username} has been deactivated.`);
-    } catch (e) { toast.error(e.response?.data?.error || 'Failed to update the account'); }
-  };
-
-  const deleteUser = async (u) => {
-    const ok = await confirm({
-      title: 'Delete this user?',
-      message: `The account of ${u.username} (${u.email}) will be permanently deleted. This can’t be undone.`,
-      confirmLabel: 'Delete user',
-    });
-    if (!ok) return;
-    try {
-      await adminDeleteUser(u._id);
-      setUsers(prev => prev.filter(x => x._id !== u._id));
-      toast.success(`${u.username} has been deleted.`);
-    } catch (e) { toast.error(e.response?.data?.error || 'Failed to delete user'); }
-  };
 
   const handleExpand = async (c) => {
     setExpanded(expanded === c._id ? null : c._id);
@@ -188,86 +152,7 @@ export default function AdminPage() {
       </div>
 
       {/* ── Users Tab ── */}
-      {tab === 'users' && (
-        <>
-          {usersLoading ? (
-            <p className="text-gray-400 text-sm">Loading...</p>
-          ) : (
-            <div className="card overflow-x-auto p-0">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-600">
-                    <th className="px-4 py-3">User</th>
-                    <th className="px-4 py-3">Email</th>
-                    <th className="px-4 py-3">Level</th>
-                    <th className="px-4 py-3">Role</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Joined</th>
-                    <th className="px-4 py-3">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map(u => (
-                    <tr key={u._id} className={`border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors ${u.deactivated ? 'bg-red-50/40 dark:bg-red-500/5' : ''}`}>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">{u.avatar || '🧑'}</span>
-                          <div>
-                            <div className="font-medium text-gray-900 dark:text-white">{u.username}</div>
-                            {(u.firstName || u.lastName) && (
-                              <div className="text-xs text-gray-400">{u.firstName} {u.lastName}</div>
-                            )}
-                          </div>
-                          {u._id === user.id && <span className="text-xs text-yellow-600 dark:text-yellow-400">(you)</span>}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{u.email}</td>
-                      <td className="px-4 py-3">
-                        <span className="bg-yellow-100 dark:bg-yellow-400/10 text-yellow-700 dark:text-yellow-400 text-xs font-bold px-2 py-0.5 rounded-full">{u.level}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                          u.role === 'admin'
-                            ? 'bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-                        }`}>{u.role}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {u.deactivated
-                          ? <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-400"><span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Deactivated</span>
-                          : <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400"><span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Active</span>}
-                      </td>
-                      <td className="px-4 py-3 text-gray-400 dark:text-gray-600 text-xs">
-                        {new Date(u.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-4 py-3">
-                        {u._id !== user.id && (
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => toggleStatus(u)}
-                              className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap ${u.deactivated
-                                ? 'bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-500/20'
-                                : 'bg-orange-100 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-500/20'}`}>
-                              {u.deactivated ? 'Activate' : 'Deactivate'}
-                            </button>
-                            <button onClick={() => toggleRole(u)} title={u.role === 'admin' ? 'Revoke admin' : 'Make admin'}
-                              className="p-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-500/10 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
-                              {u.role === 'admin' ? <ShieldOff size={15} /> : <ShieldCheck size={15} />}
-                            </button>
-                            <button onClick={() => deleteUser(u)} title="Delete user"
-                              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
+      {tab === 'users' && <UsersTable currentUserId={user.id} onUsersChanged={loadUsers} />}
 
       {/* ── Inbox Tab ── */}
       {tab === 'inbox' && (
