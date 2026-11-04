@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useToast } from './Toast';
 import MyProfileModal from './MyProfileModal';
+import { useMessages, MessagesButton, MessagesPanel } from './Messages';
 import { isSupported, requestPermission, scheduleDailyReminder, cancelDailyReminder, getNotifSettings } from '../notifications';
 
 const bottomTabs = [
@@ -66,6 +67,8 @@ const navGroups = [
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [messagesOpen, setMessagesOpen] = useState(false);
+  const inbox = useMessages();
   const [searchOpen, setSearchOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [contactForm, setContactForm] = useState({ name: '', email: '', type: 'Support', message: '' });
@@ -142,6 +145,8 @@ export default function Layout({ children }) {
               <div className="text-gray-500 dark:text-gray-400 text-xs">Learn German</div>
             </div>
           </div>
+          <div className="flex items-center gap-1.5">
+          <MessagesButton unread={inbox.unread} onClick={() => { setSidebarOpen(false); setMessagesOpen(true); }} />
           {/* Dark mode toggle */}
           <button
             onClick={() => setDarkMode(d => !d)}
@@ -154,6 +159,7 @@ export default function Layout({ children }) {
           >
             {darkMode ? <Sun size={16} /> : <Moon size={16} />}
           </button>
+          </div>
         </div>
 
         {/* Stats row */}
@@ -345,6 +351,7 @@ export default function Layout({ children }) {
             </button>
             <span className="flex items-center gap-1 text-xs bg-orange-100 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 px-2 py-1 rounded-full"><Flame size={11} /> {streak}</span>
             <span className="flex items-center gap-1 text-xs bg-yellow-100 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 px-2 py-1 rounded-full"><Star size={11} /> {totalXP}</span>
+            <MessagesButton unread={inbox.unread} onClick={() => setMessagesOpen(true)} className="w-8 h-8" />
             <button type="button" onClick={() => setProfileOpen(true)} aria-label="Open my profile" title={displayName}
               className="w-8 h-8 rounded-full flex items-center justify-center text-base bg-gradient-to-br from-blue-600 to-emerald-500 ring-2 ring-white dark:ring-gray-900 shadow">
               {user?.avatar || '🧑'}
@@ -451,6 +458,10 @@ export default function Layout({ children }) {
         </div>
       )}
       {profileOpen && <MyProfileModal onClose={() => setProfileOpen(false)} />}
+      {messagesOpen && (
+        <MessagesPanel messages={inbox.messages} unread={inbox.unread} onClose={() => setMessagesOpen(false)}
+          onRead={inbox.markRead} onReadAll={inbox.markAllRead} />
+      )}
     </div>
   );
 }

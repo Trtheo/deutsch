@@ -7,7 +7,7 @@ const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { Lesson, Exam, Progress, User, Contact, Comment } = require('./models');
+const { Lesson, Exam, Progress, User, Contact, Comment, Message } = require('./models');
 const { seedDatabase } = require('./seed');
 const { buildFallbackExam } = require('./fallback');
 const { hasExamBank, buildExamFromBank, buildExamFromContent } = require('./examBank');
@@ -355,32 +355,122 @@ app.delete('/api/admin/contacts/:id', authMiddleware, adminMiddleware, async (re
 });
 
 // ── Admin broadcast ───────────────────────────────────────
+const EMAIL_BATCH = 5; // emails sent at the same time (Gmail throttles bursts)
+
+function broadcastEmail(user, subject, message) {
+  const esc = emails.escapeHtml;
+  return {
+    to: user.email,
+    subject,
+    text: `Hi ${user.firstName || user.username},\n\n${message}\n\n— Deutsch Lernen`,
+    html: `
+      <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px;border:1px solid #e5e7eb;border-radius:12px">
+        <h2 style="color:#111827;margin-bottom:4px">${esc(subject)}</h2>
+        <p style="color:#6b7280">Hi ${esc(user.firstName || user.username)},</p>
+        <div style="color:#374151;white-space:pre-wrap;margin:16px 0">${esc(message)}</div>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0" />
+        <p style="color:#9ca3af;font-size:12px">You received this because you are registered on Deutsch Lernen. You can also read it in the app under Messages.</p>
+      </div>`,
+  };
+}
+
+// Sends in small batches and keeps the distinct failure reasons, so the admin sees why
+async function sendBroadcastEmails(users, subject, message) {
+  const result = { provider: mailer.provider(), sent: 0, failed: 0, reasons: [] };
+  if (!result.provider) {
+    result.failed = users.length;
+    result.reasons.push('Email is not set up on the server (BREVO_API_KEY, or EMAIL_USER and EMAIL_PASS).');
+    return result;
+  }
+  for (let i = 0; i < users.length; i += EMAIL_BATCH) {
+    const batch = users.slice(i, i + EMAIL_BATCH);
+    const settled = await Promise.allSettled(batch.map(u => mailer.sendMail(broadcastEmail(u, subject, message))));
+    for (const r of settled) {
+      if (r.status === 'fulfilled') { result.sent++; continue; }
+      result.failed++;
+      const reason = String(r.reason?.message || r.reason).slice(0, 200);
+      if (!result.reasons.includes(reason) && result.reasons.length < 3) result.reasons.push(reason);
+    }
+  }
+  if (result.failed) console.error(`Broadcast email: ${result.failed} failed via ${result.provider}:`, result.reasons.join(' | '));
+  return result;
+}
+
+// The message is always delivered in the app; email is optional (sendEmail: true)
 app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { subject, message, userIds } = req.body;
+    const subject = String(req.body.subject || '').trim();
+    const message = String(req.body.message || '').trim();
+    const userIds = Array.isArray(req.body.userIds) ? req.body.userIds.filter(id => mongoose.isValidObjectId(id)) : [];
+    const sendEmail = req.body.sendEmail === true;
     if (!subject || !message) return res.status(400).json({ error: 'Subject and message are required' });
-    // userIds = [] means all users
-    const filter = userIds?.length ? { _id: { $in: userIds } } : {};
+    if (subject.length > 150) return res.status(400).json({ error: 'Subject is too long (max 150 characters)' });
+    if (message.length > 5000) return res.status(400).json({ error: 'Message is too long (max 5000 characters)' });
+
+    // userIds empty = everyone; deactivated accounts never receive broadcasts
+    const filter = { deactivated: { $ne: true }, ...(userIds.length ? { _id: { $in: userIds } } : {}) };
     const users = await User.find(filter).select('email firstName username');
-    if (!users.length) return res.status(400).json({ error: 'No recipients found' });
-    const esc = emails.escapeHtml;
-    const results = await Promise.allSettled(users.map(u =>
-      mailer.sendMail({
-        to: u.email,
-        subject,
-        html: `
-          <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px;border:1px solid #e5e7eb;border-radius:12px">
-            <h2 style="color:#111827;margin-bottom:4px">${esc(subject)}</h2>
-            <p style="color:#6b7280">Hi ${esc(u.firstName || u.username)},</p>
-            <div style="color:#374151;white-space:pre-wrap;margin:16px 0">${esc(message)}</div>
-            <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0" />
-            <p style="color:#9ca3af;font-size:12px">You received this because you are registered on Deutsch Lernen.</p>
-          </div>`,
-      })
-    ));
-    const sent = results.filter(r => r.status === 'fulfilled').length;
-    const failed = results.filter(r => r.status === 'rejected').length;
-    res.json({ sent, failed, total: users.length });
+    if (!users.length) return res.status(400).json({ error: 'No active recipients found' });
+
+    const doc = await Message.create({
+      subject, body: message,
+      toAll: !userIds.length,
+      recipients: userIds.length ? users.map(u => String(u._id)) : [],
+      recipientCount: users.length,
+      sentBy: { id: String(req.user.id), username: req.user.username },
+    });
+
+    let email = null;
+    if (sendEmail) {
+      email = await sendBroadcastEmails(users, subject, message);
+      doc.email = email;
+      await doc.save();
+    }
+    res.json({ id: doc._id, total: users.length, inApp: users.length, email });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Broadcast history for the admin panel
+app.get('/api/admin/broadcasts', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const list = await Message.find().sort({ createdAt: -1 }).limit(50).lean();
+    res.json(list.map(({ readBy, recipients, ...m }) => ({ ...m, readCount: readBy.length })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── In-app messages for the signed-in user ────────────────
+async function messagesFilterFor(userId) {
+  const me = await User.findById(userId).select('createdAt').lean();
+  return { $or: [{ toAll: true, createdAt: { $gte: me?.createdAt || new Date(0) } }, { recipients: String(userId) }] };
+}
+
+app.get('/api/messages', authMiddleware, async (req, res) => {
+  try {
+    const id = String(req.user.id);
+    const list = await Message.find(await messagesFilterFor(id)).sort({ createdAt: -1 }).limit(50).lean();
+    const messages = list.map(m => ({
+      _id: m._id, subject: m.subject, body: m.body, createdAt: m.createdAt,
+      from: m.sentBy?.username || 'Deutsch Lernen', read: m.readBy.includes(id),
+    }));
+    res.json({ messages, unread: messages.filter(m => !m.read).length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/messages/read-all', authMiddleware, async (req, res) => {
+  try {
+    const id = String(req.user.id);
+    await Message.updateMany(await messagesFilterFor(id), { $addToSet: { readBy: id } });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/messages/:id/read', authMiddleware, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: 'Message not found' });
+    const id = String(req.user.id);
+    const result = await Message.updateOne({ _id: req.params.id, ...(await messagesFilterFor(id)) }, { $addToSet: { readBy: id } });
+    if (!result.matchedCount) return res.status(404).json({ error: 'Message not found' });
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

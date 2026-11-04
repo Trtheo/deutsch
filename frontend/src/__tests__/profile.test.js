@@ -18,6 +18,8 @@ beforeEach(() => {
     { lessonSlug: 'numbers', status: 'in_progress', xp: 10, lastActivity: today, examScores: [{ score: 7, total: 10 }] },
   ] });
   api.getAILessons.mockResolvedValue({ data: [] });
+  api.getMessages.mockResolvedValue({ data: { messages: [], unread: 0 } });
+  api.adminGetBroadcasts?.mockResolvedValue?.({ data: [] });
   api.getMe.mockResolvedValue({ data: { ...user, emailVerified: true, createdAt: '2026-10-01T10:00:00Z' } });
 });
 

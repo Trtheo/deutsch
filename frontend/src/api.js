@@ -43,6 +43,12 @@ export const resendVerification = (data) => api.post('/auth/resend-verification'
 export const checkUsername  = (username) => api.get('/auth/check-username', { params: { username } });
 export const sendContact    = (data) => api.post('/contact', data);
 
+// In-app messages (admin broadcasts)
+export const getMessages          = ()   => api.get('/messages');
+export const markMessageRead      = (id) => api.post(`/messages/${id}/read`);
+export const markAllMessagesRead  = ()   => api.post('/messages/read-all');
+export const adminGetBroadcasts   = ()   => api.get('/admin/broadcasts');
+
 // Translator
 export const translateText = (data) => api.post('/translate', data);
 

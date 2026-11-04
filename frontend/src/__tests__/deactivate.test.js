@@ -26,6 +26,8 @@ beforeEach(() => {
   localStorage.setItem('deutsch_user', JSON.stringify(admin));
   api.getProgress.mockResolvedValue({ data: [] });
   api.getAILessons.mockResolvedValue({ data: [] });
+  api.getMessages.mockResolvedValue({ data: { messages: [], unread: 0 } });
+  api.adminGetBroadcasts?.mockResolvedValue?.({ data: [] });
   api.adminGetUsers.mockResolvedValue({ data: [bossRow, anna] });
   api.adminListUsers.mockResolvedValue(page([anna, bossRow]));
   api.adminGetContacts.mockResolvedValue({ data: [] });

@@ -19,8 +19,12 @@ services:
         generateValue: true      # Render generates a long random secret
       - key: DEEPL_API_KEY
         sync: false              # optional: better translations (DeepL free plan); without it the free MyMemory service is used
+      - key: BREVO_API_KEY
+        sync: false              # recommended on the free plan (it blocks Gmail's mail ports): Brevo API key, 300 emails/day free
+      - key: EMAIL_FROM
+        sync: false              # optional: Brevo sender address (verified in Brevo); defaults to EMAIL_USER
       - key: EMAIL_USER
-        sync: false              # optional: Gmail address for password-reset emails
+        sync: false              # optional: Gmail address (Gmail sending, and default sender)
       - key: EMAIL_PASS
         sync: false              # optional: Gmail app password
       - key: APP_URL

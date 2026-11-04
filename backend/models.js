@@ -81,7 +81,22 @@ const commentSchema = new mongoose.Schema({
   createdAt:  { type: Date, default: Date.now }
 });
 
+// A broadcast from an admin, shown in users' in-app messages (and optionally emailed)
+const messageSchema = new mongoose.Schema({
+  subject:    { type: String, required: true, maxlength: 150 },
+  body:       { type: String, required: true, maxlength: 5000 },
+  toAll:      { type: Boolean, default: true },        // all users who had joined when it was sent
+  recipients: { type: [String], default: [], index: true }, // user ids when not toAll
+  recipientCount: { type: Number, default: 0 },
+  sentBy:     { id: String, username: String },
+  readBy:     { type: [String], default: [] },
+  // Email result, or null when not emailed: { provider, sent, failed, reasons: [String] }
+  email:      { type: mongoose.Schema.Types.Mixed, default: null },
+  createdAt:  { type: Date, default: Date.now, index: true },
+});
+
 module.exports = {
+  Message:  mongoose.model('Message', messageSchema),
   Lesson:   mongoose.model('Lesson', lessonSchema),
   Exam:     mongoose.model('Exam', examSchema),
   Progress: mongoose.model('Progress', progressSchema),

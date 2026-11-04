@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { adminGetUsers, adminGetContacts, adminMarkRead, adminDeleteContact, adminBroadcast, adminGetAnalytics } from '../api';
+import { adminGetUsers, adminGetContacts, adminMarkRead, adminDeleteContact, adminGetAnalytics } from '../api';
 import { Trash2, AlertCircle, MessageSquare, Users, Mail, MailOpen, Send, CheckCircle2, BarChart2, TrendingUp, BookOpen, MessageCircle, Star, ClipboardList } from 'lucide-react';
 import { useDialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import UsersTable from '../components/admin/UsersTable';
+import BroadcastPanel from '../components/admin/BroadcastPanel';
 
 const TYPE_COLORS = {
   Support:     'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400',
@@ -31,10 +32,6 @@ export default function AdminPage() {
   const [analytics, setAnalytics] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
-  // Broadcast
-  const [bcast, setBcast] = useState({ subject: '', message: '', userIds: [] });
-  const [bcastStatus, setBcastStatus] = useState(''); // '' | 'sending' | 'done' | 'error'
-  const [bcastResult, setBcastResult] = useState(null);
 
   // Full list for the tab badge and broadcast recipients; the table loads its own pages
   const loadUsers = useCallback(() => {
@@ -82,27 +79,6 @@ export default function AdminPage() {
       if (expanded === c._id) setExpanded(null);
       toast.success('Message deleted.');
     } catch (e) { toast.error(e.response?.data?.error || 'Failed to delete message'); }
-  };
-
-  const handleBroadcast = async () => {
-    if (!bcast.subject || !bcast.message) return toast.error('Subject and message are required.');
-    setBcastStatus('sending');
-    try {
-      const res = await adminBroadcast(bcast);
-      setBcastResult(res.data);
-      setBcastStatus('done');
-      toast.success(`Broadcast sent to ${res.data.sent} of ${res.data.total} users.`);
-    } catch (e) {
-      toast.error(e.response?.data?.error || 'Failed to send.');
-      setBcastStatus('error');
-    }
-  };
-
-  const toggleUserSelect = (id) => {
-    setBcast(b => ({
-      ...b,
-      userIds: b.userIds.includes(id) ? b.userIds.filter(x => x !== id) : [...b.userIds, id]
-    }));
   };
 
   const unread = contacts.filter(c => !c.read).length;
@@ -306,78 +282,7 @@ export default function AdminPage() {
       )}
 
       {/* ── Broadcast Tab ── */}
-      {tab === 'broadcast' && (
-        <div className="space-y-5 max-w-2xl">
-          {bcastStatus === 'done' ? (
-            <div className="card text-center py-10 space-y-3">
-              <CheckCircle2 size={40} className="mx-auto text-green-500" />
-              <p className="text-gray-900 dark:text-white font-bold text-lg">Broadcast Sent!</p>
-              <p className="text-gray-500 dark:text-gray-400 text-sm">
-                ✅ {bcastResult?.sent} sent &nbsp;·&nbsp;
-                {bcastResult?.failed > 0 && <span className="text-red-500">❌ {bcastResult.failed} failed &nbsp;·&nbsp;</span>}
-                {bcastResult?.total} total recipients
-              </p>
-              <button className="btn-secondary mt-2" onClick={() => { setBcastStatus(''); setBcast({ subject: '', message: '', userIds: [] }); setBcastResult(null); }}>
-                Send Another
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* Recipients */}
-              <div className="card space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-gray-900 dark:text-white text-sm">Recipients</h3>
-                  <span className="text-xs text-gray-400">
-                    {bcast.userIds.length === 0 ? 'All users' : `${bcast.userIds.length} selected`}
-                  </span>
-                </div>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                  {users.map(u => (
-                    <label key={u._id} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer">
-                      <input type="checkbox"
-                        checked={bcast.userIds.includes(u._id)}
-                        onChange={() => toggleUserSelect(u._id)}
-                        className="accent-yellow-400 w-4 h-4" />
-                      <span className="text-lg">{u.avatar || '🧑'}</span>
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{u.username}</div>
-                        <div className="text-xs text-gray-400 truncate">{u.email}</div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-                <p className="text-xs text-gray-400 dark:text-gray-500">
-                  Leave all unchecked to send to <strong>all users</strong>.
-                </p>
-              </div>
-
-              {/* Compose */}
-              <div className="card space-y-4">
-                <h3 className="font-bold text-gray-900 dark:text-white text-sm">Compose Message</h3>
-                <div>
-                  <label className="text-gray-500 dark:text-gray-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Subject</label>
-                  <input className="input" placeholder="e.g. New lessons available!" value={bcast.subject}
-                    onChange={e => setBcast(b => ({ ...b, subject: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="text-gray-500 dark:text-gray-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Message</label>
-                  <textarea className="input resize-none" rows={6}
-                    placeholder="Write your message here..."
-                    value={bcast.message}
-                    onChange={e => setBcast(b => ({ ...b, message: e.target.value }))} />
-                </div>
-                <button className="btn-primary w-full flex items-center justify-center gap-2"
-                  onClick={handleBroadcast} disabled={bcastStatus === 'sending'}>
-                  <Send size={15} />
-                  {bcastStatus === 'sending'
-                    ? 'Sending...'
-                    : `Send to ${bcast.userIds.length === 0 ? 'All Users' : `${bcast.userIds.length} User${bcast.userIds.length > 1 ? 's' : ''}`}`}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+      {tab === 'broadcast' && <BroadcastPanel users={users} />}
     </div>
   );
 }

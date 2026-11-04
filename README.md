@@ -37,7 +37,9 @@ On first start the backend seeds the built-in lessons into MongoDB.
 | `DEEPL_API_KEY` | no | Better translations in the translator (DeepL free plan: 500,000 characters a month). Without it, the free MyMemory service is used |
 | `PORT` | no | Backend port (default `5000`) |
 | `APP_URL` | no | Frontend URL, used in password-reset emails |
-| `EMAIL_USER`, `EMAIL_PASS` | no | Gmail credentials for password-reset and broadcast emails |
+| `BREVO_API_KEY` | no | Sends email (verification, password reset, broadcasts) through Brevo's web API, free for 300 emails a day. **Use this on Render's free plan**, which blocks the mail ports Gmail needs |
+| `EMAIL_FROM` | no | Sender address for Brevo. It must be a verified sender in your Brevo account. Defaults to `EMAIL_USER` |
+| `EMAIL_USER`, `EMAIL_PASS` | no | Gmail address and app password, used when `BREVO_API_KEY` isn't set (and as the Brevo sender) |
 
 The server refuses to start if `MONGODB_URI` or `JWT_SECRET` is missing.
 

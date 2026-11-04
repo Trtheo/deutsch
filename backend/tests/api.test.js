@@ -16,6 +16,7 @@ let mongod, app, User, Lesson, Exam, Progress;
 const mailer = require('../mailer');
 const sentMail = [];
 mailer.isConfigured = () => true;
+mailer.provider = () => 'test';
 mailer.sendMail = async msg => { sentMail.push(msg); };
 const lastMailTo = email => [...sentMail].reverse().find(m => m.to === email);
 const verifyParams = mail => {
@@ -340,6 +341,113 @@ describe('admin users table', () => {
 
     assert.equal((await request(app).get('/api/admin/users/not-an-id').set(auth(adminToken))).status, 404);
     assert.equal((await request(app).get(`/api/admin/users/${anna.user.id}`).set(auth(anna.token))).status, 403);
+  });
+});
+
+describe('broadcasts and in-app messages', () => {
+  async function setup() {
+    const admin = await registerUser({ username: 'boss', email: 'boss@example.com' });
+    const adminToken = await makeAdmin(admin);
+    const anna = await registerUser();
+    const ben = await registerUser({ username: 'ben', email: 'ben@example.com' });
+    sentMail.length = 0;
+    return { adminToken, anna, ben };
+  }
+  const broadcast = (token, body) => request(app).post('/api/admin/broadcast').set(auth(token)).send(body);
+  const inbox = token => request(app).get('/api/messages').set(auth(token));
+
+  test('a broadcast reaches every user in the app, without email by default', async () => {
+    const { adminToken, anna } = await setup();
+    const res = await broadcast(adminToken, { subject: 'Neue Lektionen', message: 'Viel Spaß beim Lernen!' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.inApp, 3);
+    assert.equal(res.body.email, null);
+    assert.equal(sentMail.length, 0);
+
+    const box = await inbox(anna.token);
+    assert.equal(box.body.unread, 1);
+    assert.equal(box.body.messages[0].subject, 'Neue Lektionen');
+    assert.equal(box.body.messages[0].from, 'boss');
+  });
+
+  test('with sendEmail it also emails, and reports what was sent', async () => {
+    const { adminToken } = await setup();
+    const res = await broadcast(adminToken, { subject: 'Hallo', message: 'Test', sendEmail: true });
+    assert.equal(res.body.email.sent, 3);
+    assert.equal(res.body.email.failed, 0);
+    assert.equal(sentMail.length, 3);
+    assert.match(sentMail[0].html, /Test/);
+  });
+
+  test('failed emails come back with the reason, and the message is still delivered in the app', async () => {
+    const { adminToken, anna } = await setup();
+    const realSend = mailer.sendMail;
+    mailer.sendMail = async () => { throw new Error('Connection timeout'); };
+    try {
+      const res = await broadcast(adminToken, { subject: 'Hallo', message: 'Test', sendEmail: true });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.email.sent, 0);
+      assert.equal(res.body.email.failed, 3);
+      assert.deepEqual(res.body.email.reasons, ['Connection timeout']);
+    } finally { mailer.sendMail = realSend; }
+    assert.equal((await inbox(anna.token)).body.unread, 1);
+  });
+
+  test('without email set up, the reason says so', async () => {
+    const { adminToken } = await setup();
+    mailer.isConfigured = () => false;
+    const realProvider = mailer.provider;
+    mailer.provider = () => null;
+    try {
+      const res = await broadcast(adminToken, { subject: 'Hallo', message: 'Test', sendEmail: true });
+      assert.equal(res.body.email.failed, 3);
+      assert.match(res.body.email.reasons[0], /not set up/);
+    } finally { mailer.isConfigured = () => true; mailer.provider = realProvider; }
+  });
+
+  test('selected recipients only; deactivated users are skipped', async () => {
+    const { adminToken, anna, ben } = await setup();
+    await request(app).patch(`/api/admin/users/${ben.user.id}/status`).set(auth(adminToken)).send({ active: false });
+    const res = await broadcast(adminToken, { subject: 'Nur für dich', message: 'Hallo Anna', userIds: [anna.user.id, ben.user.id] });
+    assert.equal(res.body.inApp, 1);
+    assert.equal((await inbox(anna.token)).body.unread, 1);
+    await request(app).patch(`/api/admin/users/${ben.user.id}/status`).set(auth(adminToken)).send({ active: true });
+    assert.equal((await inbox(ben.token)).body.messages.length, 0);
+  });
+
+  test('messages can be marked read one by one or all at once', async () => {
+    const { adminToken, anna, ben } = await setup();
+    await broadcast(adminToken, { subject: 'Eins', message: '1' });
+    await broadcast(adminToken, { subject: 'Zwei', message: '2' });
+    const [first] = (await inbox(anna.token)).body.messages;
+    assert.equal((await request(app).post(`/api/messages/${first._id}/read`).set(auth(anna.token))).status, 200);
+    assert.equal((await inbox(anna.token)).body.unread, 1);
+    await request(app).post('/api/messages/read-all').set(auth(anna.token));
+    assert.equal((await inbox(anna.token)).body.unread, 0);
+    assert.equal((await inbox(ben.token)).body.unread, 2, 'read state is per user');
+  });
+
+  test('users who join later do not get older "everyone" broadcasts', async () => {
+    const { adminToken } = await setup();
+    await broadcast(adminToken, { subject: 'Alt', message: 'old news' });
+    const cara = await registerUser({ username: 'cara', email: 'cara@example.com' });
+    assert.equal((await inbox(cara.token)).body.messages.length, 0);
+  });
+
+  test('history for admins, validation, and only admins can broadcast', async () => {
+    const { adminToken, anna } = await setup();
+    await broadcast(adminToken, { subject: 'Eins', message: '1' });
+    await request(app).post('/api/messages/read-all').set(auth(anna.token));
+    const history = await request(app).get('/api/admin/broadcasts').set(auth(adminToken));
+    assert.equal(history.body.length, 1);
+    assert.equal(history.body[0].readCount, 1);
+    assert.equal(history.body[0].recipientCount, 3);
+    assert.equal(history.body[0].readBy, undefined);
+
+    assert.equal((await broadcast(adminToken, { subject: '', message: 'x' })).status, 400);
+    assert.equal((await broadcast(adminToken, { subject: 'x', message: 'y'.repeat(5001) })).status, 400);
+    assert.equal((await broadcast(anna.token, { subject: 'x', message: 'y' })).status, 403);
+    assert.equal((await request(app).get('/api/messages')).status, 401);
   });
 });
 
