@@ -81,6 +81,8 @@ export const adminUpdateRole    = (id, role)   => api.put(`/admin/users/${id}/ro
 export const adminListUsers     = (params)     => api.get('/admin/users', { params }); // paginated: { users, total, pages, counts }
 export const adminGetUser       = (id)         => api.get(`/admin/users/${id}`);       // with learning stats
 export const adminSetUserStatus = (id, active) => api.patch(`/admin/users/${id}/status`, { active });
+export const adminVerifyUser    = (id)         => api.patch(`/admin/users/${id}/verify`);   // confirm email by hand
+export const adminVerifyPending = ()           => api.post('/admin/users/verify-pending');  // all unverified accounts
 export const adminDeleteUser    = (id)         => api.delete(`/admin/users/${id}`);
 export const adminGetContacts   = ()           => api.get('/admin/contacts');
 export const adminMarkRead      = (id)         => api.patch(`/admin/contacts/${id}/read`);

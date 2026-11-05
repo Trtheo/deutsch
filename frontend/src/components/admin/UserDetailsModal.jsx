@@ -8,7 +8,7 @@ import UserInfoModal, { formatDate, timeAgo } from '../UserInfoModal';
 
 // Admin view of any user: profile, learning statistics and admin actions.
 // `user` is the table row (updated after every action); details and stats are loaded on open.
-export default function UserDetailsModal({ user, isSelf, onClose, onToggleStatus, onToggleRole, onDelete }) {
+export default function UserDetailsModal({ user, isSelf, onClose, onToggleStatus, onToggleRole, onDelete, onVerify }) {
   const [details, setDetails] = useState(null);
   const [failed, setFailed] = useState(false);
   const u = { ...(details || {}), ...user }; // the row wins; details add the statistics
@@ -47,6 +47,11 @@ export default function UserDetailsModal({ user, isSelf, onClose, onToggleStatus
       <button onClick={() => onDelete(u)} className="mr-auto text-sm font-semibold px-3 py-2 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-1.5">
         <Trash2 size={15} /> Delete
       </button>
+      {u.emailVerified === false && onVerify && (
+        <button onClick={() => onVerify(u)} className="text-sm font-semibold px-3 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white flex items-center gap-1.5">
+          <BadgeCheck size={15} /> Verify account
+        </button>
+      )}
       <button onClick={() => onToggleRole(u)} className="text-sm font-semibold px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-500/20 flex items-center gap-1.5">
         {u.role === 'admin' ? <><ShieldOff size={15} /> Revoke admin</> : <><ShieldCheck size={15} /> Make admin</>}
       </button>

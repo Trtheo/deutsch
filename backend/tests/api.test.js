@@ -344,6 +344,69 @@ describe('admin users table', () => {
   });
 });
 
+describe('admins verifying accounts by hand', () => {
+  async function setup() {
+    const admin = await registerUser({ username: 'boss', email: 'boss@example.com' });
+    const adminToken = await makeAdmin(admin);
+    // Two users who registered but never got (or never clicked) their verification email
+    for (const name of ['anna', 'ben']) {
+      await request(app).post('/api/auth/register').send({ username: name, email: `${name}@example.com`, password: 'secret123' });
+    }
+    const anna = await User.findOne({ username: 'anna' });
+    sentMail.length = 0;
+    return { adminToken, anna };
+  }
+  const login = name => request(app).post('/api/auth/login').send({ email: `${name}@example.com`, password: 'secret123' });
+
+  test('an admin verifies one account: the user can log in and gets a welcome email', async () => {
+    const { adminToken, anna } = await setup();
+    assert.equal((await login('anna')).body.code, 'EMAIL_NOT_VERIFIED');
+
+    const res = await request(app).patch(`/api/admin/users/${anna._id}/verify`).set(auth(adminToken));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.emailVerified, true);
+    assert.equal(res.body.verifyTokenHash, undefined);
+
+    assert.equal((await login('anna')).status, 200);
+    assert.equal((await login('ben')).status, 403, 'others are untouched');
+    await new Promise(r => setImmediate(r));
+    assert.match(sentMail.find(m => m.to === 'anna@example.com').subject, /account is ready/);
+
+    const again = await request(app).patch(`/api/admin/users/${anna._id}/verify`).set(auth(adminToken));
+    assert.equal(again.status, 400);
+  });
+
+  test('"verify all pending" verifies everyone still waiting', async () => {
+    const { adminToken } = await setup();
+    const res = await request(app).post('/api/admin/users/verify-pending').set(auth(adminToken));
+    assert.equal(res.body.verified, 2);
+    assert.deepEqual(res.body.usernames.sort(), ['anna', 'ben']);
+    assert.equal((await login('anna')).status, 200);
+    assert.equal((await login('ben')).status, 200);
+    const list = await request(app).get('/api/admin/users').query({ page: 1 }).set(auth(adminToken));
+    assert.equal(list.body.counts.unverified, 0);
+    assert.equal((await request(app).post('/api/admin/users/verify-pending').set(auth(adminToken))).body.verified, 0);
+  });
+
+  test('the old verification link stops working after an admin verifies', async () => {
+    const { adminToken, anna } = await setup();
+    const reg = await request(app).post('/api/auth/resend-verification').send({ email: 'anna@example.com' });
+    assert.equal(reg.status, 200);
+    const params = verifyParams(lastMailTo('anna@example.com'));
+    await request(app).patch(`/api/admin/users/${anna._id}/verify`).set(auth(adminToken));
+    const res = await request(app).post('/api/auth/verify-email').send(params);
+    assert.equal(res.body.code, 'ALREADY_VERIFIED');
+  });
+
+  test('only admins can verify accounts', async () => {
+    const { anna } = await setup();
+    const student = await registerUser({ username: 'cara', email: 'cara@example.com' });
+    assert.equal((await request(app).patch(`/api/admin/users/${anna._id}/verify`).set(auth(student.token))).status, 403);
+    assert.equal((await request(app).post('/api/admin/users/verify-pending').set(auth(student.token))).status, 403);
+    assert.equal((await request(app).post('/api/admin/users/verify-pending')).status, 401);
+  });
+});
+
 describe('broadcasts and in-app messages', () => {
   async function setup() {
     const admin = await registerUser({ username: 'boss', email: 'boss@example.com' });

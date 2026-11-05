@@ -133,3 +133,61 @@ test('a user signed out because of deactivation sees why on the login screen', (
   expect(screen.getByText(/Your account has been deactivated/)).toBeInTheDocument();
   expect(sessionStorage.getItem('auth_notice')).toBeNull(); // shown once
 });
+
+describe('verifying accounts by hand', () => {
+  const pending = { ...anna, emailVerified: false };
+  const counts = { all: 2, active: 2, deactivated: 0, admins: 1, unverified: 1 };
+
+  test('unverified users are marked, and the admin can verify one from the table', async () => {
+    api.adminListUsers.mockResolvedValue(page([pending, bossRow], { counts }));
+    api.adminVerifyUser.mockImplementation(async () => {
+      api.adminListUsers.mockResolvedValue(page([{ ...anna, emailVerified: true }, bossRow]));
+      return { data: { ...anna, emailVerified: true } };
+    });
+    render(<App />);
+    const tbl = await table();
+    const row = rowOf(tbl, 'Anna Schmidt');
+    expect(within(row).getByText('Not verified')).toBeInTheDocument();
+
+    fireEvent.click(within(row).getByLabelText('Verify account'));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('anna (anna@example.com) will be able to log in right away');
+    await act(async () => fireEvent.click(within(dialog).getByText('Verify account')));
+
+    expect(api.adminVerifyUser).toHaveBeenCalledWith('u2');
+    expect(screen.getByRole('status')).toHaveTextContent('anna’s account is verified');
+    await waitFor(() => expect(within(rowOf(tbl, 'Anna Schmidt')).queryByText('Not verified')).not.toBeInTheDocument());
+  });
+
+  test('a banner offers to verify every pending account at once', async () => {
+    api.adminListUsers.mockResolvedValue(page([pending, bossRow], { counts }));
+    api.adminVerifyPending.mockResolvedValue({ data: { verified: 1, usernames: ['anna'] } });
+    render(<App />);
+    await table();
+    expect(screen.getByText(/registered but never verified their email/)).toHaveTextContent('1 user registered');
+
+    fireEvent.click(screen.getByText('Verify all'));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Verify 1 pending account?');
+    await act(async () => fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Verify all')));
+    expect(api.adminVerifyPending).toHaveBeenCalled();
+    expect(screen.getByRole('status')).toHaveTextContent('1 account verified.');
+  });
+
+  test('"Show them" filters the table to unverified users', async () => {
+    api.adminListUsers.mockResolvedValue(page([pending, bossRow], { counts }));
+    render(<App />);
+    await table();
+    fireEvent.click(screen.getByText('Show them'));
+    await waitFor(() => expect(api.adminListUsers).toHaveBeenLastCalledWith(expect.objectContaining({ verified: 'no' })));
+  });
+
+  test('the details popup has a "Verify account" button for unverified users', async () => {
+    api.adminListUsers.mockResolvedValue(page([pending, bossRow], { counts }));
+    api.adminGetUser.mockResolvedValue({ data: { ...pending, stats: { xp: 0, lessonsCompleted: 0, lessonsInProgress: 0, examsTaken: 0, averageScore: null, bestScore: null, comments: 0, lastActivity: null } } });
+    render(<App />);
+    fireEvent.click(rowOf(await table(), 'Anna Schmidt'));
+    const modal = screen.getByRole('dialog', { name: 'User details: anna' });
+    expect(within(modal).getByText('Not yet')).toBeInTheDocument();
+    expect(within(modal).getByText('Verify account')).toBeInTheDocument();
+  });
+});

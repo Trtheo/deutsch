@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Search, X, Eye, UserX, UserCheck, ShieldCheck, ShieldOff, Trash2, ChevronLeft, ChevronRight,
-  ArrowUp, ArrowDown, ArrowUpDown, Users, UserRound, Ban, SlidersHorizontal, RotateCcw,
+  ArrowUp, ArrowDown, ArrowUpDown, Users, UserRound, Ban, SlidersHorizontal, RotateCcw, BadgeCheck, MailWarning,
 } from 'lucide-react';
-import { adminListUsers, adminSetUserStatus, adminUpdateRole, adminDeleteUser } from '../../api';
+import { adminListUsers, adminSetUserStatus, adminUpdateRole, adminDeleteUser, adminVerifyUser, adminVerifyPending } from '../../api';
 import { useDialog } from '../Dialog';
 import { useToast } from '../Toast';
 import UserDetailsModal from './UserDetailsModal';
@@ -17,6 +17,11 @@ function pageList(page, pages) {
   const set = new Set([1, pages, page - 1, page, page + 1].filter(p => p >= 1 && p <= pages));
   const sorted = [...set].sort((a, b) => a - b);
   return sorted.flatMap((p, i) => (i > 0 && p - sorted[i - 1] > 1 ? ['…', p] : [p]));
+}
+
+function VerifiedBadge({ u }) {
+  if (u.emailVerified !== false) return null;
+  return <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400" title="This user hasn’t confirmed their email yet"><MailWarning size={11} /> Not verified</span>;
 }
 
 function StatusBadge({ u }) {
@@ -127,6 +132,34 @@ export default function UsersTable({ currentUserId, onUsersChanged }) {
     } catch (e) { toast.error(e.response?.data?.error || 'Failed to update role'); }
   };
 
+  const verifyUser = async (u) => {
+    const ok = await confirm({
+      tone: 'info', title: 'Verify this account?', confirmLabel: 'Verify account',
+      message: `${u.username} (${u.email}) will be able to log in right away, without the email link. They get a welcome email if email is working.`,
+    });
+    if (!ok) return;
+    try {
+      const res = await adminVerifyUser(u._id);
+      replaceUser(res.data);
+      toast.success(`${u.username}’s account is verified. They can log in now.`);
+      refresh();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to verify the account'); }
+  };
+
+  const verifyAllPending = async () => {
+    const n = data.counts?.unverified || 0;
+    const ok = await confirm({
+      tone: 'info', title: `Verify ${n} pending account${n === 1 ? '' : 's'}?`, confirmLabel: 'Verify all',
+      message: 'Everyone who registered but never confirmed their email will be able to log in right away. They get a welcome email if email is working.',
+    });
+    if (!ok) return;
+    try {
+      const res = await adminVerifyPending();
+      toast.success(`${res.data.verified} account${res.data.verified === 1 ? '' : 's'} verified.`);
+      refresh();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to verify accounts'); }
+  };
+
   const deleteUser = async (u) => {
     const ok = await confirm({
       title: 'Delete this user?',
@@ -163,6 +196,9 @@ export default function UsersTable({ currentUserId, onUsersChanged }) {
     <span className="text-xs text-gray-400 px-2">—</span>
   ) : (
     <div className="flex items-center justify-end gap-0.5">
+      {u.emailVerified === false && (
+        <IconButton label="Verify account" onClick={() => verifyUser(u)} className="text-orange-500 hover:bg-green-50 dark:hover:bg-green-500/10 hover:text-green-600"><BadgeCheck size={16} /></IconButton>
+      )}
       <IconButton label="View details" onClick={() => setSelected(u)} className="hover:bg-blue-50 dark:hover:bg-blue-500/10 hover:text-blue-600"><Eye size={16} /></IconButton>
       <IconButton label={u.deactivated ? 'Activate' : 'Deactivate'} onClick={() => toggleStatus(u)}
         className={u.deactivated ? 'hover:bg-green-50 dark:hover:bg-green-500/10 hover:text-green-600' : 'hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:text-orange-600'}>
@@ -194,6 +230,21 @@ export default function UsersTable({ currentUserId, onUsersChanged }) {
           </button>
         ))}
       </div>
+
+      {counts?.unverified > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-orange-200 dark:border-orange-500/30 bg-orange-50 dark:bg-orange-500/5 px-4 py-3">
+          <MailWarning size={20} className="text-orange-500 flex-shrink-0" />
+          <p className="text-sm text-gray-700 dark:text-gray-300 flex-1">
+            <strong>{counts.unverified} user{counts.unverified === 1 ? '' : 's'}</strong> registered but never verified their email, so they can’t log in.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => setFilter('verified', 'no')} className="btn-secondary text-xs">Show them</button>
+            <button onClick={verifyAllPending} className="text-xs font-semibold px-3 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white flex items-center gap-1.5">
+              <BadgeCheck size={14} /> Verify all
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="card p-0 overflow-hidden">
         {/* Toolbar */}
@@ -272,7 +323,7 @@ export default function UsersTable({ currentUserId, onUsersChanged }) {
                   </td>
                   <td className="px-3 py-3"><span className="bg-yellow-100 dark:bg-yellow-400/10 text-yellow-700 dark:text-yellow-400 text-xs font-bold px-2 py-0.5 rounded-full">{u.level || 'A1'}</span></td>
                   <td className="px-3 py-3"><RoleBadge role={u.role} /></td>
-                  <td className="px-3 py-3"><StatusBadge u={u} /></td>
+                  <td className="px-3 py-3"><div className="flex flex-col items-start gap-1"><StatusBadge u={u} /><VerifiedBadge u={u} /></div></td>
                   <td className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td className="px-4 py-3">{actionsFor(u)}</td>
                 </tr>
@@ -293,7 +344,7 @@ export default function UsersTable({ currentUserId, onUsersChanged }) {
                 </div>
               </div>
               <div className="flex items-center justify-between mt-3">
-                <div className="flex flex-wrap gap-1.5"><RoleBadge role={u.role} /><StatusBadge u={u} /></div>
+                <div className="flex flex-wrap gap-1.5"><RoleBadge role={u.role} /><StatusBadge u={u} /><VerifiedBadge u={u} /></div>
                 {actionsFor(u)}
               </div>
             </div>
@@ -341,6 +392,7 @@ export default function UsersTable({ currentUserId, onUsersChanged }) {
           onToggleStatus={toggleStatus}
           onToggleRole={toggleRole}
           onDelete={deleteUser}
+          onVerify={verifyUser}
         />
       )}
     </div>

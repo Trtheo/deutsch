@@ -558,6 +558,39 @@ app.get('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req, res
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── Admin: verify accounts by hand (for users whose verification email never arrived) ──
+const VERIFIED = { emailVerified: true, verifyTokenHash: null, verifyTokenExpiry: null };
+
+// Welcome email tells them they can log in now; failures don't block the verification
+function sendWelcomeAfterAdminVerify(user) {
+  if (!mailer.isConfigured()) return;
+  mailer.sendMail({ to: user.email, ...emails.welcome({ name: displayName(user) }) })
+    .catch(err => console.error('Welcome email failed:', err.message));
+}
+
+app.patch('/api/admin/users/:id/verify', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: 'User not found' });
+    const existing = await User.findById(req.params.id).select('emailVerified');
+    if (!existing) return res.status(404).json({ error: 'User not found' });
+    if (existing.emailVerified !== false) return res.status(400).json({ error: 'This account is already verified' });
+    const user = await User.findByIdAndUpdate(req.params.id, VERIFIED, { returnDocument: 'after' }).select(PRIVATE_USER_FIELDS);
+    sendWelcomeAfterAdminVerify(user);
+    res.json(user);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Verifies every account still waiting for its email link
+app.post('/api/admin/users/verify-pending', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const pending = await User.find({ emailVerified: false }).select('email firstName username');
+    if (!pending.length) return res.json({ verified: 0 });
+    await User.updateMany({ _id: { $in: pending.map(u => u._id) } }, VERIFIED);
+    pending.forEach(sendWelcomeAfterAdminVerify);
+    res.json({ verified: pending.length, usernames: pending.map(u => u.username) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.patch('/api/admin/users/:id/status', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { active } = req.body;
