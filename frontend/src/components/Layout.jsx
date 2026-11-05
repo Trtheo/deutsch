@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useToast } from './Toast';
 import MyProfileModal from './MyProfileModal';
+import { InstallSidebarButton } from './InstallPrompt';
 import { useMessages, MessagesButton, MessagesPanel } from './Messages';
 import { isSupported, requestPermission, scheduleDailyReminder, cancelDailyReminder, getNotifSettings } from '../notifications';
 
@@ -181,6 +182,7 @@ export default function Layout({ children }) {
           <span className="flex-1 text-left">Search lessons...</span>
           <kbd className="text-xs bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600">⌘K</kbd>
         </button>
+        <InstallSidebarButton onDone={() => setSidebarOpen(false)} />
         {navGroups.map((group) => (
           <div key={group.label}>
             <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-600 px-3 mb-1">

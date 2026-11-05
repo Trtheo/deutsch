@@ -4,6 +4,7 @@ import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { DialogProvider } from './components/Dialog';
 import { ToastProvider } from './components/Toast';
+import { InstallBanner } from './components/InstallPrompt';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import LessonPage from './pages/LessonPage';
@@ -42,6 +43,7 @@ export default function App() {
             </AppProvider>
           </AuthProvider>
         </DialogProvider>
+        <InstallBanner />
       </ToastProvider>
     </BrowserRouter>
   );
