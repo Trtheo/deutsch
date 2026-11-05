@@ -2,13 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { ProgressBar } from './UI';
 import { sendContact } from '../api';
 import SearchModal from './SearchModal';
 import {
   Home, BarChart2, Brain, FolderOpen, Type, BookOpen, Hash,
   FileText, Zap, BookMarked, PenLine, Headphones, Mic, Clock,
-  Sun, Moon, Flame, Star, LogOut, BookOpenCheck, WifiOff, Layers, Bell, BellOff, ShieldCheck, MessageSquare, X, Search, Languages, UserCog
+  Sun, Moon, Flame, Star, LogOut, BookOpenCheck, WifiOff, Layers, Bell, BellOff, ShieldCheck, MessageSquare, X, Search, Languages
 } from 'lucide-react';
 import { useToast } from './Toast';
 import MyProfileModal from './MyProfileModal';
@@ -131,7 +130,7 @@ export default function Layout({ children }) {
   };
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-y-auto [@media(min-height:720px)]:overflow-hidden">
 
       {/* Logo */}
       <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
@@ -174,7 +173,7 @@ export default function Layout({ children }) {
       </div>
 
       {/* Scrollable nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+      <nav className="flex-none [@media(min-height:720px)]:flex-1 [@media(min-height:720px)]:overflow-y-auto px-3 py-3 space-y-4">
         {/* Search */}
         <button onClick={() => setSearchOpen(true)}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm">
@@ -224,81 +223,68 @@ export default function Layout({ children }) {
         )}
       </nav>
 
-      {/* Notifications */}
-      {isSupported() && (
-        <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-800 flex-shrink-0 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-              {notifEnabled ? <Bell size={13} className="text-yellow-500" /> : <BellOff size={13} />}
-              Daily Reminder
-            </span>
-            <button
-              onClick={handleToggleNotif}
-              className={`relative w-9 h-5 rounded-full transition-colors ${
-                notifEnabled ? 'bg-yellow-400' : 'bg-gray-300 dark:bg-gray-700'
-              }`}
-            >
-              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                notifEnabled ? 'translate-x-4' : 'translate-x-0.5'
-              }`} />
-            </button>
-          </div>
-          {notifEnabled && (
-            <input
-              type="time"
-              value={reminderTime}
-              onChange={e => handleTimeChange(e.target.value)}
-              className="input text-xs py-1 px-2 h-7"
-            />
-          )}
-          {notifStatus === 'denied' && (
-            <p className="text-red-500 dark:text-red-400 text-xs">Notifications blocked — enable in browser settings.</p>
-          )}
-        </div>
-      )}
-
-      {/* User + logout */}
-      <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-800 flex-shrink-0 space-y-2">
-        <button onClick={openContact}
-          className="w-full flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 hover:text-yellow-600 dark:hover:text-yellow-400 transition-colors py-1">
-          <MessageSquare size={13} /> Contact / Feedback
-        </button>
+      {/* Footer: profile card (with level progress) and a row of quick actions */}
+      <div className="px-3 pt-3 pb-2 border-t border-gray-200 dark:border-gray-800 flex-shrink-0 space-y-2">
         {/* Account card: opens the "My profile" popup */}
         <button type="button" onClick={() => { setSidebarOpen(false); setProfileOpen(true); }}
           aria-label="Open my profile"
-          className={`group w-full text-left flex items-center gap-3 rounded-2xl p-3 bg-gradient-to-br from-blue-600 to-emerald-500 text-white shadow-md
+          className={`w-full text-left rounded-2xl p-3 bg-gradient-to-br from-blue-600 to-emerald-500 text-white shadow-md
             hover:shadow-lg hover:brightness-110 transition-all ${pathname === '/profile' ? 'ring-2 ring-yellow-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : ''}`}>
-          <span className="w-10 h-10 rounded-full bg-white/20 ring-2 ring-white/40 flex items-center justify-center text-xl flex-shrink-0">
-            {user?.avatar || '🧑'}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-bold truncate">{displayName}</span>
-            <span className="block text-xs text-white/80 truncate">@{user?.username}</span>
-            <span className="flex items-center gap-1.5 mt-1">
+          <span className="flex items-center gap-2.5">
+            <span className="w-10 h-10 rounded-full bg-white/20 ring-2 ring-white/40 flex items-center justify-center text-xl flex-shrink-0">
+              {user?.avatar || '🧑'}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold leading-tight line-clamp-2 break-words">{displayName}</span>
+              <span className="block text-[11px] text-white/80 truncate mt-0.5">@{user?.username}</span>
+            </span>
+            <span className="flex flex-col items-end gap-1 flex-shrink-0">
               <span className="text-[10px] font-bold bg-white/25 rounded-full px-2 py-0.5">{user?.level || 'A1'}</span>
               <span className="text-[10px] font-semibold bg-white/15 rounded-full px-2 py-0.5">{user?.role === 'admin' ? 'Admin' : 'Student'}</span>
             </span>
           </span>
-          <UserCog size={18} className="text-white/80 group-hover:text-white flex-shrink-0" />
+          {/* Level progress */}
+          <span className="block mt-2.5">
+            <span className="flex justify-between text-[10px] text-white/85 mb-1">
+              <span>{totalXP >= 1000 ? 'Level complete 🎉' : `${1000 - totalXP} XP to next level`}</span>
+              <span className="font-semibold">{totalXP}/1000</span>
+            </span>
+            <span className="block h-1.5 rounded-full bg-white/25 overflow-hidden">
+              <span className="block h-full bg-yellow-300 rounded-full" style={{ width: `${Math.min(100, totalXP / 10)}%` }} />
+            </span>
+          </span>
         </button>
-        <button onClick={logout}
-          className="w-full text-xs text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex items-center justify-center gap-1 py-1">
-          <LogOut size={13} /> Logout
-        </button>
-      </div>
 
-      {/* Footer progress */}
-      <div className="px-4 py-4 border-t border-gray-200 dark:border-gray-800 flex-shrink-0">
-        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-500 mb-1.5">
-          <span>Level Progress</span>
-          <span className="text-yellow-600 dark:text-yellow-400 font-medium">{totalXP} / 1000 XP</span>
+        {/* Quick actions */}
+        <div className={`grid gap-1.5 ${isSupported() ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          {isSupported() && (
+            <button onClick={handleToggleNotif} aria-pressed={notifEnabled}
+              title={notifEnabled ? 'Daily reminder is on' : 'Turn on a daily reminder'}
+              className={`flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium transition-colors
+                ${notifEnabled ? 'bg-yellow-100 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-400' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+              {notifEnabled ? <Bell size={15} /> : <BellOff size={15} />} Reminder
+            </button>
+          )}
+          <button onClick={openContact} title="Contact / Feedback"
+            className="flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+            <MessageSquare size={15} /> Feedback
+          </button>
+          <button onClick={logout} title="Log out"
+            className="flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+            <LogOut size={15} /> Log out
+          </button>
         </div>
-        <ProgressBar value={totalXP} max={1000} />
-        <div className="text-xs text-gray-400 dark:text-gray-600 mt-1.5 text-center">
-          {totalXP >= 1000 ? '🎉 Level Complete!' : `${1000 - totalXP} XP to next level`}
-        </div>
-        <div className="text-xs text-center mt-3 text-gray-300 dark:text-gray-700">
-          Powered by <span className="font-semibold text-yellow-500 dark:text-yellow-600">Best Scholars Africa</span>
+        {notifEnabled && (
+          <label className="flex items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-gray-400 px-1">
+            Remind me at
+            <input type="time" value={reminderTime} onChange={e => handleTimeChange(e.target.value)} className="input text-xs py-1 px-2 h-7 w-auto" />
+          </label>
+        )}
+        {notifStatus === 'denied' && (
+          <p className="text-red-500 dark:text-red-400 text-[11px] px-1">Notifications are blocked. Allow them in your browser settings.</p>
+        )}
+        <div className="text-[10px] text-center text-gray-400 dark:text-gray-600">
+          Powered by <span className="font-semibold text-yellow-600 dark:text-yellow-500">Best Scholars Africa</span>
         </div>
       </div>
     </div>
