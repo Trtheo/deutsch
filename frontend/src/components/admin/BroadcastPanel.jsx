@@ -9,6 +9,21 @@ const SUBJECT_MAX = 150;
 const MESSAGE_MAX = 5000;
 const EMPTY = { subject: '', message: '', audience: 'all', userIds: [], sendEmail: false };
 
+// What to do about a failed email, based on the provider and the error
+function emailHint({ provider, reasons = [] }) {
+  const reason = reasons.join(' ');
+  if (/BREVO_SMTP_LOGIN/.test(reason)) return 'Add BREVO_SMTP_LOGIN (Brevo → SMTP & API → SMTP → Login) on the API service.';
+  if (/Brevo 401/.test(reason)) return 'Brevo rejected the key. Check BREVO_API_KEY on the API service: an API key starts with “xkeysib-”.';
+  if (/Brevo 400.*sender|sender.*not valid/i.test(reason)) return 'The sender address isn’t verified in Brevo. Add EMAIL_FROM as a sender under Brevo → Senders.';
+  if (/not set up|not configured/i.test(reason)) return 'Email isn’t set up on the server yet.';
+  if (/timeout|ETIMEDOUT|ECONNREFUSED/i.test(reason)) {
+    return provider === 'gmail' || provider === 'brevo-smtp'
+      ? 'The server can’t reach the mail server; Render’s free plan blocks mail ports. Use a Brevo API key (BREVO_API_KEY = xkeysib-…), which sends over normal web traffic.'
+      : 'The email service didn’t answer in time. Please try again.';
+  }
+  return 'Check the email settings on the API service.';
+}
+
 // Explains the email part of a broadcast result (or a history entry)
 function EmailResult({ email }) {
   if (!email) return <span className="text-gray-400">In-app only</span>;
@@ -100,8 +115,7 @@ export default function BroadcastPanel({ users }) {
                 )}
                 {result.email.sent === 0 && result.email.failed > 0 && (
                   <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">
-                    If the server is on Render’s free plan, it can’t reach Gmail’s mail servers. Add a free <strong>Brevo</strong> API key
-                    (<code>BREVO_API_KEY</code>) on the API service and emails will go out. The message itself was still delivered in the app.
+                    {emailHint(result.email)} The message itself was still delivered in the app.
                   </p>
                 )}
               </div>

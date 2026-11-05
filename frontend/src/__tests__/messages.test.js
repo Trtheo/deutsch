@@ -115,7 +115,7 @@ describe('admin broadcast', () => {
     expect(api.adminBroadcast).toHaveBeenCalledWith(expect.objectContaining({ sendEmail: true }));
     expect(screen.getByText(/0 sent · 2 failed/)).toBeInTheDocument();
     expect(screen.getByText('• Connection timeout')).toBeInTheDocument();
-    expect(screen.getByText(/BREVO_API_KEY/)).toBeInTheDocument();
+    expect(screen.getByText(/Render’s free plan blocks mail ports/)).toBeInTheDocument();
   });
 
   test('selected recipients', async () => {
