@@ -27,7 +27,11 @@ app.get('/api/health', (req, res) => {
 
 // ── Rate limiting ─────────────────────────────────────────
 // General API: 200 requests per 15 minutes
+// Automated tests make many requests from one address; limits stay on everywhere else
+const skipLimitsInTests = () => process.env.NODE_ENV === 'test';
+
 const apiLimiter = rateLimit({
+  skip: skipLimitsInTests,
   windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
@@ -37,6 +41,7 @@ const apiLimiter = rateLimit({
 
 // Exam generation: 30 per 15 minutes (each one writes to the database)
 const examLimiter = rateLimit({
+  skip: skipLimitsInTests,
   windowMs: 15 * 60 * 1000,
   max: 30,
   standardHeaders: true,
@@ -89,16 +94,23 @@ async function authMiddleware(req, res, next) {
 // ── Auth helpers ──────────────────────────────────────────
 const VERIFY_LINK_HOURS = 24;
 // Never send these to any client, not even to admins
-const PRIVATE_USER_FIELDS = '-password -resetToken -resetTokenExpiry -verifyTokenHash -verifyTokenExpiry';
+const PRIVATE_USER_FIELDS = '-password -resetToken -resetTokenExpiry -verifyTokenHash -verifyTokenOldHashes -verifyTokenExpiry';
 
 const publicUser = u => ({ id: u._id, firstName: u.firstName, lastName: u.lastName, username: u.username, email: u.email, level: u.level, avatar: u.avatar, bio: u.bio, role: u.role });
 const sessionFor = u => ({ token: jwt.sign({ id: u._id, username: u.username, role: u.role }, JWT_SECRET, { expiresIn: '30d' }), user: publicUser(u) });
 const displayName = u => u.firstName || u.username;
 const hashToken = t => crypto.createHash('sha256').update(String(t)).digest('hex');
 
-// Puts a fresh single-use token on the user (save it afterwards) and returns the link for the email
+// Puts a fresh token on the user (save it afterwards) and returns the link for the email.
+// Earlier links that haven't expired keep working (last 3), so clicking an older email still verifies.
+const KEEP_OLD_LINKS = 2;
 function issueVerifyLink(user) {
   const token = crypto.randomBytes(32).toString('hex');
+  if (user.verifyTokenHash && user.verifyTokenExpiry > new Date()) {
+    user.verifyTokenOldHashes = [...(user.verifyTokenOldHashes || []), user.verifyTokenHash].slice(-KEEP_OLD_LINKS);
+  } else {
+    user.verifyTokenOldHashes = [];
+  }
   user.verifyTokenHash = hashToken(token);
   user.verifyTokenExpiry = new Date(Date.now() + VERIFY_LINK_HOURS * 60 * 60 * 1000);
   return `${emails.appUrl()}/verify-email?token=${token}&email=${encodeURIComponent(user.email)}`;
@@ -116,6 +128,7 @@ async function sendVerificationEmail(user, link) {
 
 // Resending emails: 5 per 15 minutes per IP
 const resendLimiter = rateLimit({
+  skip: skipLimitsInTests,
   windowMs: 15 * 60 * 1000,
   max: 5,
   standardHeaders: true,
@@ -184,12 +197,15 @@ app.post('/api/auth/verify-email', async (req, res) => {
     if (user.emailVerified !== false && !user.verifyTokenHash) {
       return res.status(400).json({ code: 'ALREADY_VERIFIED', error: 'This email is already verified. Please sign in.' });
     }
-    const matches = user.verifyTokenHash && crypto.timingSafeEqual(Buffer.from(user.verifyTokenHash), Buffer.from(hashToken(token)));
-    if (!matches) return res.status(400).json({ code: 'INVALID_LINK', error: 'This verification link is invalid or was already used. Request a new one.' });
+    const given = Buffer.from(hashToken(token));
+    const matches = [user.verifyTokenHash, ...(user.verifyTokenOldHashes || [])]
+      .some(h => h && crypto.timingSafeEqual(Buffer.from(h), given));
+    if (!matches) return res.status(400).json({ code: 'INVALID_LINK', error: 'This verification link is not valid any more. Use the newest email we sent you, or request a new link.' });
     if (user.verifyTokenExpiry < new Date()) return res.status(400).json({ code: 'LINK_EXPIRED', error: 'This verification link has expired. Request a new one.' });
 
     user.emailVerified = true;
     user.verifyTokenHash = null;
+    user.verifyTokenOldHashes = [];
     user.verifyTokenExpiry = null;
     await user.save();
 
@@ -559,7 +575,7 @@ app.get('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req, res
 });
 
 // ── Admin: verify accounts by hand (for users whose verification email never arrived) ──
-const VERIFIED = { emailVerified: true, verifyTokenHash: null, verifyTokenExpiry: null };
+const VERIFIED = { emailVerified: true, verifyTokenHash: null, verifyTokenOldHashes: [], verifyTokenExpiry: null };
 
 // Welcome email tells them they can log in now; failures don't block the verification
 function sendWelcomeAfterAdminVerify(user) {
@@ -824,6 +840,7 @@ app.delete('/api/exams/:id', authMiddleware, async (req, res) => {
 // ── Translator ────────────────────────────────────────────
 // 60 translations per 15 minutes per IP keeps the free provider quota safe
 const translateLimiter = rateLimit({
+  skip: skipLimitsInTests,
   windowMs: 15 * 60 * 1000,
   max: 60,
   standardHeaders: true,

@@ -2,15 +2,20 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { CheckCircle2, Loader2, MailWarning } from 'lucide-react';
 import { verifyEmail, resendVerification } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 // Opened from the link in the verification email. Works without being logged in:
 // on success it stores the session and goes straight to the dashboard.
+// If someone else is already logged in (e.g. an admin opening a user's link), the account is
+// verified but their own session is kept.
 export default function VerifyEmailPage({ onVerified }) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const email = params.get('email') || '';
   const token = params.get('token') || '';
-  const [state, setState] = useState('verifying'); // verifying | success | error
+  // Rendered outside the auth provider when logged out, so the context can be missing
+  const currentUser = useAuth()?.user;
+  const [state, setState] = useState('verifying'); // verifying | success | verified-other | already | error
   const [error, setError] = useState({ code: '', message: '' });
   const [resend, setResend] = useState('');
   const started = useRef(false);
@@ -26,6 +31,10 @@ export default function VerifyEmailPage({ onVerified }) {
     }
     verifyEmail({ email, token })
       .then(res => {
+        if (currentUser && currentUser.email?.toLowerCase() !== email.toLowerCase()) {
+          setState('verified-other');
+          return;
+        }
         localStorage.setItem('deutsch_token', res.data.token);
         localStorage.setItem('deutsch_user', JSON.stringify(res.data.user));
         setState('success');
@@ -35,10 +44,11 @@ export default function VerifyEmailPage({ onVerified }) {
         }, 1500);
       })
       .catch(e => {
+        if (e.response?.data?.code === 'ALREADY_VERIFIED') { setState('already'); return; }
         setState('error');
         setError({ code: e.response?.data?.code || '', message: e.response?.data?.error || 'Could not verify your email. Please try again.' });
       });
-  }, [email, token, navigate, onVerified]);
+  }, [email, token, navigate, onVerified, currentUser]);
 
   const handleResend = async () => {
     setResend('sending');
@@ -78,11 +88,33 @@ export default function VerifyEmailPage({ onVerified }) {
             </>
           )}
 
+          {state === 'verified-other' && (
+            <>
+              <CheckCircle2 size={44} className="mx-auto text-green-500" />
+              <div>
+                <p className="text-gray-900 dark:text-white font-bold text-lg">Account verified</p>
+                <p className="text-gray-500 dark:text-gray-400 text-sm mt-1"><strong>{email}</strong> can now sign in. You are still signed in as {currentUser?.username}.</p>
+              </div>
+              <button className="btn-primary w-full" onClick={() => navigate('/', { replace: true })}>Back to the app</button>
+            </>
+          )}
+
+          {state === 'already' && (
+            <>
+              <CheckCircle2 size={44} className="mx-auto text-green-500" />
+              <div>
+                <p className="text-gray-900 dark:text-white font-bold text-lg">Already verified</p>
+                <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">This account is already verified{currentUser ? '.' : ', so you can sign in with your email and password.'}</p>
+              </div>
+              <button className="btn-primary w-full" onClick={() => navigate('/', { replace: true })}>{currentUser ? 'Back to the app' : 'Go to sign in'}</button>
+            </>
+          )}
+
           {state === 'error' && (
             <>
               <MailWarning size={44} className="mx-auto text-red-500" />
               <p className="text-gray-700 dark:text-gray-300 text-sm">{error.message}</p>
-              {email && error.code !== 'ALREADY_VERIFIED' && (
+              {email && (
                 resend === 'sent'
                   ? <p className="text-green-600 dark:text-green-400 text-sm">A new link is on its way to <strong>{email}</strong>.</p>
                   : <button className="btn-primary w-full" onClick={handleResend} disabled={resend === 'sending'}>

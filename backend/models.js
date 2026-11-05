@@ -66,6 +66,7 @@ const userSchema = new mongoose.Schema({
   // No default on purpose: accounts created before verification existed have no value and count as verified
   emailVerified:   { type: Boolean },
   verifyTokenHash: { type: String, default: null },
+  verifyTokenOldHashes: { type: [String], default: [] }, // earlier links that still work after a resend
   verifyTokenExpiry:{ type: Date, default: null },
   resetToken:      { type: String, default: null },
   resetTokenExpiry:{ type: Date, default: null },

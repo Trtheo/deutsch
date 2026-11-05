@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const request = require('supertest');
 
 process.env.JWT_SECRET = 'test-secret';
+process.env.NODE_ENV = 'test'; // turns rate limits off for the test run
 process.env.MONGODB_URI = 'mongodb://placeholder'; // replaced by the in-memory server below
 process.env.APP_URL = 'https://app.example.com';
 delete process.env.OPENAI_API_KEY;                 // force template fallbacks, never call OpenAI
@@ -164,15 +165,24 @@ describe('email verification', () => {
     assert.equal(res.body.code, 'LINK_EXPIRED');
   });
 
-  test('resending replaces the old link', async () => {
+  test('after a resend, the earlier email link still works (and then both are used up)', async () => {
     await request(app).post('/api/auth/register').send(anna);
     const oldParams = verifyParams(lastMailTo(anna.email));
     const res = await request(app).post('/api/auth/resend-verification').send({ email: anna.email });
     assert.equal(res.status, 200);
     const newParams = verifyParams(lastMailTo(anna.email));
     assert.notEqual(newParams.token, oldParams.token);
-    assert.equal((await request(app).post('/api/auth/verify-email').send(oldParams)).body.code, 'INVALID_LINK');
-    assert.equal((await request(app).post('/api/auth/verify-email').send(newParams)).status, 200);
+    assert.equal((await request(app).post('/api/auth/verify-email').send(oldParams)).status, 200);
+    assert.equal((await request(app).post('/api/auth/verify-email').send(newParams)).body.code, 'ALREADY_VERIFIED');
+  });
+
+  test('only the last few links are kept', async () => {
+    await request(app).post('/api/auth/register').send(anna);
+    const first = verifyParams(lastMailTo(anna.email));
+    for (let i = 0; i < 3; i++) await request(app).post('/api/auth/resend-verification').send({ email: anna.email });
+    assert.equal((await request(app).post('/api/auth/verify-email').send(first)).body.code, 'INVALID_LINK');
+    const stored = await User.findOne({ email: anna.email });
+    assert.equal(stored.verifyTokenOldHashes.length, 2);
   });
 
   test('resend gives the same answer for unknown emails', async () => {

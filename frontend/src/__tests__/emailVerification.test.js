@@ -74,3 +74,25 @@ test('logging in before verifying offers to resend the email', async () => {
   fireEvent.click(screen.getByText('Resend verification email'));
   expect(await screen.findByText(/A new verification link is on its way/)).toBeInTheDocument();
 });
+
+test('an admin opening a user’s link verifies it but stays signed in as themselves', async () => {
+  const admin = { id: 'a1', username: 'boss', email: 'boss@example.com', role: 'admin' };
+  localStorage.setItem('deutsch_token', 'admin-jwt');
+  localStorage.setItem('deutsch_user', JSON.stringify(admin));
+  api.verifyEmail.mockResolvedValue({ data: { token: 'anna-jwt', user: { id: '2', username: 'anna', email: 'anna@example.com' } } });
+  render(
+    <ToastProvider><MemoryRouter initialEntries={['/verify-email?token=abc&email=anna%40example.com']}>
+      <AuthProvider><VerifyEmailPage /></AuthProvider>
+    </MemoryRouter></ToastProvider>
+  );
+  expect(await screen.findByText('Account verified')).toBeInTheDocument();
+  expect(screen.getByText(/You are still signed in as boss/)).toBeInTheDocument();
+  expect(localStorage.getItem('deutsch_token')).toBe('admin-jwt');
+});
+
+test('an already verified account gets a friendly message instead of an error', async () => {
+  api.verifyEmail.mockRejectedValue({ response: { data: { code: 'ALREADY_VERIFIED', error: 'This email is already verified. Please sign in.' } } });
+  render(<MemoryRouter initialEntries={['/verify-email?token=abc&email=anna%40example.com']}><VerifyEmailPage /></MemoryRouter>);
+  expect(await screen.findByText('Already verified')).toBeInTheDocument();
+  expect(screen.getByText('Go to sign in')).toBeInTheDocument();
+});
