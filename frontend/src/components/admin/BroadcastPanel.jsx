@@ -9,6 +9,9 @@ const SUBJECT_MAX = 150;
 const MESSAGE_MAX = 5000;
 const EMPTY = { subject: '', message: '', audience: 'all', userIds: [], sendEmail: false };
 
+// Friendly names for the email service the server used
+const PROVIDER_NAMES = { brevo: 'Brevo', 'brevo-smtp': 'Brevo', gmail: 'Gmail' };
+
 // What to do about a failed email, based on the provider and the error
 function emailHint({ provider, reasons = [] }) {
   const reason = reasons.join(' ');
@@ -106,7 +109,7 @@ export default function BroadcastPanel({ users }) {
                 <div className="flex items-center gap-2 font-semibold text-gray-900 dark:text-white">
                   {result.email.failed === 0 ? <Mail size={16} className="text-green-600" /> : result.email.sent === 0 ? <XCircle size={16} className="text-red-600" /> : <AlertTriangle size={16} className="text-orange-600" />}
                   Email: {result.email.sent} sent · {result.email.failed} failed
-                  {result.email.provider && <span className="text-xs font-normal text-gray-500">via {result.email.provider}</span>}
+                  {PROVIDER_NAMES[result.email.provider] && <span className="text-xs font-normal text-gray-500">· Sent with {PROVIDER_NAMES[result.email.provider]}</span>}
                 </div>
                 {result.email.reasons?.length > 0 && (
                   <ul className="mt-2 space-y-1 text-gray-700 dark:text-gray-300">

@@ -114,6 +114,7 @@ describe('admin broadcast', () => {
 
     expect(api.adminBroadcast).toHaveBeenCalledWith(expect.objectContaining({ sendEmail: true }));
     expect(screen.getByText(/0 sent · 2 failed/)).toBeInTheDocument();
+    expect(screen.getByText('· Sent with Gmail')).toBeInTheDocument();
     expect(screen.getByText('• Connection timeout')).toBeInTheDocument();
     expect(screen.getByText(/Render’s free plan blocks mail ports/)).toBeInTheDocument();
   });
