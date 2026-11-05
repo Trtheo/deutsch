@@ -38,6 +38,7 @@ On first start the backend seeds the built-in lessons into MongoDB.
 | `PORT` | no | Backend port (default `5000`) |
 | `APP_URL` | no | Frontend URL, used in password-reset emails |
 | `BREVO_API_KEY` | no | Sends email (verification, password reset, broadcasts) through Brevo's web API, free for 300 emails a day. **Use this on Render's free plan**, which blocks the mail ports Gmail needs |
+| `BREVO_SMTP_LOGIN` | no | Needed only if you use a Brevo **SMTP** key (`xsmtpsib-…`) instead of an API key: the login shown in Brevo under SMTP & API → SMTP. Mail then goes through Brevo’s server on port 2525 |
 | `EMAIL_FROM` | no | Sender address for Brevo. It must be a verified sender in your Brevo account. Defaults to `EMAIL_USER` |
 | `EMAIL_USER`, `EMAIL_PASS` | no | Gmail address and app password, used when `BREVO_API_KEY` isn't set (and as the Brevo sender) |
 

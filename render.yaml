@@ -21,6 +21,8 @@ services:
         sync: false              # optional: better translations (DeepL free plan); without it the free MyMemory service is used
       - key: BREVO_API_KEY
         sync: false              # recommended on the free plan (it blocks Gmail's mail ports): Brevo API key, 300 emails/day free
+      - key: BREVO_SMTP_LOGIN
+        sync: false              # only with a Brevo SMTP key (xsmtpsib-...): the SMTP login from Brevo, sends via port 2525
       - key: EMAIL_FROM
         sync: false              # optional: Brevo sender address (verified in Brevo); defaults to EMAIL_USER
       - key: EMAIL_USER

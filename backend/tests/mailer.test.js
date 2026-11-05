@@ -5,11 +5,12 @@ const mailer = require('../mailer');
 
 const realFetch = global.fetch;
 const saved = {};
-const KEYS = ['BREVO_API_KEY', 'EMAIL_FROM', 'EMAIL_USER', 'EMAIL_PASS'];
+const KEYS = ['BREVO_API_KEY', 'BREVO_SMTP_KEY', 'BREVO_SMTP_LOGIN', 'BREVO_SMTP_PORT', 'EMAIL_FROM', 'EMAIL_USER', 'EMAIL_PASS'];
 
 beforeEach(() => { for (const k of KEYS) { saved[k] = process.env[k]; delete process.env[k]; } });
 afterEach(() => {
   global.fetch = realFetch;
+  mailer._transports = {};
   for (const k of KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
 });
 
@@ -46,4 +47,30 @@ test('Brevo errors carry the reason', async () => {
   process.env.EMAIL_USER = 'me@gmail.com';
   global.fetch = async () => ({ ok: false, status: 401, statusText: 'Unauthorized', json: async () => ({ message: 'Key not found' }) });
   await assert.rejects(mailer.sendMail({ to: 'a@b.de', subject: 'x', html: 'x' }), /Brevo 401: Key not found/);
+});
+
+test('a Brevo SMTP key (even in BREVO_API_KEY) uses the Brevo mail server on port 2525', async () => {
+  process.env.BREVO_API_KEY = 'xsmtpsib-abc';
+  process.env.BREVO_SMTP_LOGIN = '9a1b2c@smtp-brevo.com';
+  process.env.EMAIL_FROM = 'school@example.com';
+  process.env.EMAIL_USER = 'me@gmail.com';
+  process.env.EMAIL_PASS = 'gmail-pass';
+  assert.equal(mailer.provider(), 'brevo-smtp');
+  const t = mailer.transport('brevo-smtp');
+  assert.equal(t.options.host, 'smtp-relay.brevo.com');
+  assert.equal(t.options.port, 2525);
+  assert.deepEqual(t.options.auth, { user: '9a1b2c@smtp-brevo.com', pass: 'xsmtpsib-abc' });
+  let sent;
+  t.sendMail = async msg => { sent = msg; };
+  await mailer.sendMail({ to: 'anna@example.com', subject: 'Hallo', html: '<p>Hi</p>' });
+  assert.equal(sent.from, '"Deutsch Lernen" <school@example.com>');
+  assert.equal(sent.to, 'anna@example.com');
+});
+
+test('a Brevo SMTP key without its login gives a clear error instead of falling back to Gmail', async () => {
+  process.env.BREVO_API_KEY = 'xsmtpsib-abc';
+  process.env.EMAIL_USER = 'me@gmail.com';
+  process.env.EMAIL_PASS = 'gmail-pass';
+  assert.equal(mailer.provider(), 'brevo-smtp');
+  await assert.rejects(mailer.sendMail({ to: 'a@b.de', subject: 'x', html: 'x' }), /BREVO_SMTP_LOGIN is missing/);
 });
