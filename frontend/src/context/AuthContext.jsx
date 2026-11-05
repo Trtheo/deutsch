@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
+import { initialDark, saveThemeChoice, applyTheme, watchSystemTheme } from '../theme';
 import { Eye, EyeOff, Sun, Moon, MailCheck } from 'lucide-react';
 import { register as apiRegister, login as apiLogin, updateProfile, updatePassword, forgotPassword, checkUsername, resendVerification } from '../api';
 import VerifyEmailPage from '../pages/VerifyEmailPage';
@@ -43,12 +44,10 @@ function AuthScreen({ onDone }) {
   const [resendState, setResendState] = useState('');         // '' | sending | sent | failed
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [dark, setDark] = useState(() => localStorage.getItem('theme') !== 'light');
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
-  }, [dark]);
+  const [dark, setDark] = useState(initialDark);
+  useEffect(() => { applyTheme(dark); }, [dark]);
+  useEffect(() => watchSystemTheme(setDark), []);
+  const toggleDark = () => setDark(d => { saveThemeChoice(!d); return !d; });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const switchMode = (m) => { setMode(m); setError(''); setSuccess(''); setUnverifiedEmail(''); setResendState(''); setUsernameCustomized(false); setUsernameStatus(null); };
@@ -151,7 +150,7 @@ function AuthScreen({ onDone }) {
 
         {/* Dark mode toggle */}
         <div className="flex justify-end">
-          <button onClick={() => setDark(d => !d)}
+          <button onClick={toggleDark} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
             className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
             {dark ? <Sun size={16} /> : <Moon size={16} />}
           </button>

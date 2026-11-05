@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getProgress, updateProgress } from '../api';
+import { initialDark, saveThemeChoice, applyTheme, watchSystemTheme } from '../theme';
 
 const AppContext = createContext();
 
@@ -102,9 +103,15 @@ export function AppProvider({ children }) {
   const [dailyGoal, setDailyGoalState] = useState(() =>
     Number(localStorage.getItem('dailyGoal')) || 50
   );
-  const [darkMode, setDarkMode] = useState(() => {
-    return localStorage.getItem('theme') !== 'light';
-  });
+  // Follows the device (light if it has no setting) until the user picks a theme with the toggle
+  const [darkMode, setDarkModeState] = useState(initialDark);
+  const setDarkMode = useCallback((value) => {
+    setDarkModeState(prev => {
+      const next = typeof value === 'function' ? value(prev) : value;
+      saveThemeChoice(next);
+      return next;
+    });
+  }, []);
 
   const setDailyGoal = (val) => {
     localStorage.setItem('dailyGoal', val);
@@ -138,16 +145,8 @@ export function AppProvider({ children }) {
     };
   }, []);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    if (darkMode) {
-      root.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      root.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  }, [darkMode]);
+  useEffect(() => { applyTheme(darkMode); }, [darkMode]);
+  useEffect(() => watchSystemTheme(setDarkModeState), []);
 
   useEffect(() => {
     getProgress().then(r => {

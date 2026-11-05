@@ -20,6 +20,17 @@
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
 
     <title>Deutsch Lernen</title>
+    <script>
+      // Set the theme before the page is drawn (no white flash on dark devices). Same rule as src/theme.js:
+      // the user's saved choice, otherwise the device setting, otherwise light.
+      (function () {
+        try {
+          var c = localStorage.getItem('theme_choice');
+          var dark = c ? c === 'dark' : !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
