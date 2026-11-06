@@ -1,0 +1,23 @@
+# Keeps the free Render API awake during the day, so students don't wait ~1 minute after it sleeps.
+# Render's free plan sleeps after 15 idle minutes and allows 750 instance hours a month; pinging only
+# 06:00–24:00 Kigali time (04:00–22:00 UTC) uses about 560, leaving room for other free services.
+# Note: GitHub pauses scheduled workflows after 60 days without any commit; re-enable it in the Actions tab.
+name: Keep API awake
+
+on:
+  schedule:
+    - cron: '*/10 4-21 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the API
+        run: |
+          for i in 1 2 3; do
+            if curl -fsS --max-time 90 https://deutsch-lernen-api-67oz.onrender.com/api/health; then exit 0; fi
+            sleep 10
+          done
+          echo "::warning::API did not answer"

@@ -1,0 +1,55 @@
+# Daily encrypted database backup (free: GitHub Actions on a public repo).
+# Needs two repository secrets (Settings → Secrets and variables → Actions):
+#   MONGODB_URI        the Atlas connection string
+#   BACKUP_PASSPHRASE  a long passphrase only you know; without it backups can't be read or restored
+# Backups are kept as workflow artifacts for 30 days. Restore: see README "Backups".
+name: Database backup
+
+on:
+  schedule:
+    - cron: '30 1 * * *'   # every day at 01:30 UTC (03:30 in Kigali)
+  workflow_dispatch:        # "Run workflow" button for an extra backup
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check secrets
+        id: secrets
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        working-directory: .
+        run: |
+          if [ -z "$MONGODB_URI" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::warning::Backup skipped: add the MONGODB_URI and BACKUP_PASSPHRASE repository secrets."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ready == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci --omit=dev
+        if: steps.secrets.outputs.ready == 'true'
+      - name: Back up
+        if: steps.secrets.outputs.ready == 'true'
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: npm run backup -- ../backup-out
+      - uses: actions/upload-artifact@v4
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          name: database-backup-${{ github.run_id }}
+          path: backup-out/*.dlbk
+          retention-days: 30
+          if-no-files-found: error

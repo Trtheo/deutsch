@@ -126,7 +126,33 @@ The app runs as two Render services, and the database is your MongoDB Atlas clus
 
 After that, every push to `main` redeploys both services. The CI checks run on GitHub at the same time.
 
-On the free plan, the API sleeps after 15 minutes without traffic. The first request after that takes about a minute while it wakes up. A paid instance stays awake.
+On the free plan, the API sleeps after 15 minutes without traffic, and the first request after that takes about a minute. The **Keep API awake** workflow (`.github/workflows/keep-alive.yml`) pings it every 10 minutes from 06:00 to 24:00 Kigali time. That uses about 560 of Render's 750 free hours a month. GitHub pauses scheduled workflows after 60 days without a commit; if that happens, re-enable it in the repository's **Actions** tab.
+
+## Backups
+
+MongoDB Atlas's free tier has no automatic backups, so the app makes its own **encrypted** backups. They can only be read with your passphrase, which makes them safe to keep in a public repository.
+
+**Daily automatic backup** (`.github/workflows/backup.yml`, runs at 03:30 Kigali time):
+1. On GitHub, open the repository → **Settings → Secrets and variables → Actions → New repository secret**, and add:
+   - `MONGODB_URI`: your Atlas connection string
+   - `BACKUP_PASSPHRASE`: a long passphrase. **Write it down somewhere safe.** Without it, backups can't be restored.
+2. To test it, open **Actions → Database backup → Run workflow**. Each run stores a `.dlbk` file under **Artifacts** for 30 days.
+
+**Backup to your own computer:** put `BACKUP_PASSPHRASE` in `backend/.env`, then run:
+
+```bash
+cd backend
+npm run backup                              # writes backups/deutsch-backup-<date>.dlbk
+```
+
+**Restore:**
+
+```bash
+cd backend
+npm run restore -- path/to/file.dlbk        # shows what's inside, changes nothing
+npm run restore -- path/to/file.dlbk --yes  # adds the documents that are missing
+npm run restore -- path/to/file.dlbk --yes --drop   # replaces all data with the backup
+```
 
 ## Lesson content
 
