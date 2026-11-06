@@ -3,7 +3,7 @@
 A German learning app for CEFR levels A1–B1: hand-written lessons and exams, certificate practice, an English ⇄ German translator, flashcards, progress tracking with XP and streaks, and an admin dashboard. It uses no paid AI service.
 
 - **Backend:** Node.js, Express 5, MongoDB (Mongoose), JWT auth
-- **Frontend:** React 19 (Create React App), React Router 7, Tailwind CSS, offline support via a service worker
+- **Frontend:** React 19 with Vite, React Router 7, Tailwind CSS, installable app with offline support (service worker)
 
 ## Getting started
 
@@ -23,7 +23,7 @@ Requirements: Node.js 18+ and a MongoDB database (local or MongoDB Atlas).
 3. Run both. On Windows, double-click `start.bat`. Otherwise run these in two terminals:
    ```bash
    cd backend && npm run dev     # http://localhost:5000
-   cd frontend && npm start      # http://localhost:3000
+   cd frontend && npm run dev    # http://localhost:3000
    ```
 
 On first start the backend seeds the built-in lessons into MongoDB.
@@ -48,7 +48,8 @@ The server refuses to start if `MONGODB_URI` or `JWT_SECRET` is missing.
 
 ```bash
 cd backend && npm test                           # API tests against an in-memory MongoDB
-cd frontend && npm test -- --watchAll=false      # React unit and render tests
+cd frontend && npm test         # React unit and render tests (Vitest)
+cd frontend && npm run lint     # code checks
 ```
 
 The backend tests never touch your real database or any external service. The first run downloads a MongoDB test binary, which takes a minute.

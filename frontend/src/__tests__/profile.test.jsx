@@ -2,13 +2,13 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import * as api from '../api';
 import App from '../App';
 
-jest.mock('../api');
+vi.mock('../api');
 
 const user = { id: '1', username: 'anna', firstName: 'Anna', lastName: 'Schmidt', email: 'anna@example.com', level: 'A2', avatar: '🦊', role: 'user' };
 const today = new Date().toISOString();
 
 beforeEach(() => {
-  jest.resetAllMocks();
+  vi.resetAllMocks();
   localStorage.clear();
   localStorage.setItem('deutsch_token', 'jwt');
   localStorage.setItem('deutsch_user', JSON.stringify(user));

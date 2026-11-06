@@ -62,7 +62,7 @@ export function InstallBanner() {
       className="fixed z-[70] left-3 right-3 bottom-24 lg:bottom-6 lg:left-auto lg:right-6 lg:w-96 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl p-4">
       <button onClick={dismiss} aria-label="Close" className="absolute top-2 right-2 w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"><X size={16} /></button>
       <div className="flex items-start gap-3 pr-6">
-        <img src={`${process.env.PUBLIC_URL}/logo192.png`} alt="" className="w-12 h-12 rounded-xl flex-shrink-0" />
+        <img src={`/logo192.png`} alt="" className="w-12 h-12 rounded-xl flex-shrink-0" />
         <div className="min-w-0">
           <div className="font-bold text-gray-900 dark:text-white">Install Deutsch Lernen</div>
           <p className="text-sm text-gray-500 dark:text-gray-400">Open it from your home screen like an app. Lessons work even offline.</p>

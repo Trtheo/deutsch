@@ -4,9 +4,9 @@ import * as api from '../api';
 import ResourcesPage from '../pages/ResourcesPage';
 import { ToastProvider } from '../components/Toast';
 
-jest.mock('../api');
+vi.mock('../api');
 beforeEach(() => {
-  jest.resetAllMocks();
+  vi.resetAllMocks();
   api.getAILessons.mockResolvedValue({ data: [] });
   api.getLessons.mockResolvedValue({ data: [] });
 });

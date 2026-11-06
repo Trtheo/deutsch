@@ -2,10 +2,10 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import * as api from '../api';
 import App from '../App';
 
-jest.mock('../api', () => {
-  const actual = jest.requireActual('../api');
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal();
   const mocked = {};
-  for (const key of Object.keys(actual)) mocked[key] = typeof actual[key] === 'function' ? jest.fn() : actual[key];
+  for (const key of Object.keys(actual)) mocked[key] = typeof actual[key] === 'function' ? vi.fn() : actual[key];
   return { __esModule: true, ...mocked, default: actual.default };
 });
 
@@ -19,7 +19,7 @@ const graded = {
 };
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   localStorage.clear();
   localStorage.setItem('deutsch_token', 'jwt');
   localStorage.setItem('deutsch_user', JSON.stringify(student));

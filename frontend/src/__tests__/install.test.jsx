@@ -11,7 +11,7 @@ function setUserAgent(ua) { Object.defineProperty(window.navigator, 'userAgent',
 // Simulates Chrome/Edge saying "this app can be installed"
 function fireInstallable(outcome = 'accepted') {
   const event = new Event('beforeinstallprompt');
-  event.prompt = jest.fn();
+  event.prompt = vi.fn();
   event.userChoice = Promise.resolve({ outcome });
   act(() => { window.dispatchEvent(event); });
   return event;

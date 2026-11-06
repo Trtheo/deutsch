@@ -2,10 +2,10 @@ import { render, screen, fireEvent, within, act, waitFor } from '@testing-librar
 import * as api from '../api';
 import App from '../App';
 
-jest.mock('../api', () => {
-  const actual = jest.requireActual('../api');
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal();
   const mocked = {};
-  for (const key of Object.keys(actual)) mocked[key] = typeof actual[key] === 'function' ? jest.fn() : actual[key];
+  for (const key of Object.keys(actual)) mocked[key] = typeof actual[key] === 'function' ? vi.fn() : actual[key];
   return { __esModule: true, ...mocked, default: actual.default };
 });
 
@@ -25,7 +25,7 @@ function loginAs(user, path = '/') {
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   api.getProgress.mockResolvedValue({ data: [] });
   api.getAILessons.mockResolvedValue({ data: [] });
   api.getMessages.mockResolvedValue({ data: { messages: msgs, unread: 1 } });
@@ -124,7 +124,7 @@ describe('admin broadcast', () => {
     await openBroadcast();
     fireEvent.click(screen.getByRole('radio', { name: /Selected users/ }));
     expect(screen.queryByText('ben@example.com')).not.toBeInTheDocument(); // deactivated
-    fireEvent.click(within(screen.getByText('anna@example.com').closest('label')).getByRole('checkbox')); // eslint-disable-line testing-library/no-node-access
+    fireEvent.click(within(screen.getByText('anna@example.com').closest('label')).getByRole('checkbox'));
     fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Nur für dich' } });
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Hallo Anna' } });
     fireEvent.click(screen.getByText('Send to 1 user'));

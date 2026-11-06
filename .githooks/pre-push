@@ -9,6 +9,6 @@ echo "▶ Backend tests"
 (cd "$ROOT/backend" && npm test --silent)
 
 echo "▶ Frontend tests"
-(cd "$ROOT/frontend" && CI=true npm test --silent -- --watchAll=false)
+(cd "$ROOT/frontend" && npm test --silent)
 
 echo "✅ All tests passed — pushing"

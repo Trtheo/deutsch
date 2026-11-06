@@ -1,4 +1,4 @@
-const CACHE = 'deutsch-lernen-v3'; // bump to clear old caches for returning users
+const CACHE = 'deutsch-lernen-v4'; // bump to clear old caches for returning users
 const API_CACHE = 'deutsch-api-v2'; // v2: only lesson content (v1 also held personal data)
 
 // App shell files to pre-cache on install
@@ -26,7 +26,7 @@ self.addEventListener('activate', e => {
 
 // ── Fetch strategy ────────────────────────────────────────
 // Pages: network first, so a new deploy reaches users right away (cache only when offline).
-// /static/ build files: cache first (their names change with every build).
+// /assets/ build files: cache first (their names change with every build).
 // Other files: cached copy at once, refreshed in the background.
 // API: only lesson content is cached, for offline reading; personal data never is.
 self.addEventListener('fetch', e => {
@@ -63,7 +63,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  if (url.pathname.startsWith('/static/')) {
+  if (url.pathname.startsWith('/assets/')) {
     e.respondWith(
       caches.match(request).then(cached => cached || fetch(request).then(res => {
         if (res.ok) { const clone = res.clone(); caches.open(CACHE).then(c => c.put(request, clone)); }

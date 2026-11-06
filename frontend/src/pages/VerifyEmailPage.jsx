@@ -66,7 +66,7 @@ export default function VerifyEmailPage({ onVerified }) {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <img src={`${process.env.PUBLIC_URL}/logo.svg`} alt="" className="w-16 h-16 mx-auto mb-3" />
+          <img src={`/logo.svg`} alt="" className="w-16 h-16 mx-auto mb-3" />
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Deutsch Lernen</h1>
         </div>
 

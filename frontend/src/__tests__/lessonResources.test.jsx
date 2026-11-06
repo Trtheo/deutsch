@@ -6,7 +6,7 @@ import { DialogProvider } from '../components/Dialog';
 import { ToastProvider } from '../components/Toast';
 import LessonResources from '../components/LessonResources';
 
-jest.mock('../api');
+vi.mock('../api');
 
 const anna = { id: 'u1', username: 'anna', email: 'anna@example.com', role: 'user' };
 const items = [
@@ -15,7 +15,7 @@ const items = [
 ];
 
 beforeEach(() => {
-  jest.resetAllMocks();
+  vi.resetAllMocks();
   localStorage.setItem('deutsch_token', 'jwt');
   localStorage.setItem('deutsch_user', JSON.stringify(anna));
   api.getLessonResources.mockResolvedValue({ data: items });
@@ -30,8 +30,8 @@ const renderIt = () => render(
 test('lists shared links and your private files, and opens text in a reader', async () => {
   renderIt();
   const link = await screen.findByText('DW: Deutsch lernen');
-  expect(link.closest('a')).toHaveAttribute('href', 'https://www.dw.com/de/deutsch-lernen/s-2055'); // eslint-disable-line testing-library/no-node-access
-  expect(link.closest('a')).toHaveAttribute('rel', 'noopener noreferrer'); // eslint-disable-line testing-library/no-node-access
+  expect(link.closest('a')).toHaveAttribute('href', 'https://www.dw.com/de/deutsch-lernen/s-2055');
+  expect(link.closest('a')).toHaveAttribute('rel', 'noopener noreferrer');
   expect(screen.getByText(/Only you/)).toBeInTheDocument();
 
   fireEvent.click(screen.getByText('My vocabulary list'));

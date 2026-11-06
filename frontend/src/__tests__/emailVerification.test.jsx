@@ -5,11 +5,11 @@ import { AuthProvider } from '../context/AuthContext';
 import VerifyEmailPage from '../pages/VerifyEmailPage';
 import { ToastProvider } from '../components/Toast';
 
-jest.mock('../api');
+vi.mock('../api');
 
 beforeEach(() => {
   localStorage.clear();
-  jest.resetAllMocks();
+  vi.resetAllMocks();
   api.checkUsername.mockResolvedValue({ data: { available: true } });
 });
 

@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Same origin in development (CRA proxy) and Docker (nginx). When the API runs on another host
 // (e.g. Render), set REACT_APP_API_HOST at build time: "my-api.onrender.com" or a full URL.
-const apiHost = process.env.REACT_APP_API_HOST || '';
+const apiHost = import.meta.env.REACT_APP_API_HOST || '';
 const apiOrigin = apiHost && !/^https?:\/\//.test(apiHost) ? `https://${apiHost}` : apiHost;
 
 const api = axios.create({ baseURL: `${apiOrigin}/api` });

@@ -137,7 +137,7 @@ export default function Layout({ children }) {
       <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src={`${process.env.PUBLIC_URL}/logo.svg`} alt="" className="w-10 h-10" />
+            <img src={`/logo.svg`} alt="" className="w-10 h-10" />
             <div>
               <div className="font-bold text-gray-900 dark:text-white text-base leading-tight">
                 Deutsch Lernen
@@ -330,7 +330,7 @@ export default function Layout({ children }) {
             <BookOpenCheck size={18} />
           </button>
           <span className="text-gray-900 dark:text-white font-bold text-sm flex items-center gap-2">
-            <img src={`${process.env.PUBLIC_URL}/logo.svg`} alt="" className="w-6 h-6" /> Deutsch Lernen
+            <img src={`/logo.svg`} alt="" className="w-6 h-6" /> Deutsch Lernen
           </span>
           <div className="ml-auto flex items-center gap-2">
             <button onClick={() => setSearchOpen(true)}

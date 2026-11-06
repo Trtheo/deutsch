@@ -158,7 +158,7 @@ function AuthScreen({ onDone }) {
         </div>
 
         <div className="text-center">
-          <img src={`${process.env.PUBLIC_URL}/logo.svg`} alt="" className="w-20 h-20 mx-auto mb-3" />
+          <img src={`/logo.svg`} alt="" className="w-20 h-20 mx-auto mb-3" />
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Deutsch Lernen</h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Learn German from A1 to B1</p>
         </div>

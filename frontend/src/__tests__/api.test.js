@@ -6,7 +6,7 @@ describe('session expiry', () => {
   const { location } = window;
   beforeEach(() => {
     delete window.location;
-    window.location = { reload: jest.fn() };
+    window.location = { reload: vi.fn() };
     localStorage.setItem('deutsch_token', 'abc');
     localStorage.setItem('deutsch_user', '{}');
   });

@@ -2,10 +2,10 @@ import { render, screen, fireEvent, within, act, waitFor } from '@testing-librar
 import * as api from '../api';
 import App from '../App';
 
-jest.mock('../api', () => {
-  const actual = jest.requireActual('../api');
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal();
   const mocked = {};
-  for (const key of Object.keys(actual)) mocked[key] = typeof actual[key] === 'function' ? jest.fn() : actual[key];
+  for (const key of Object.keys(actual)) mocked[key] = typeof actual[key] === 'function' ? vi.fn() : actual[key];
   return { __esModule: true, ...mocked, default: actual.default };
 });
 
@@ -18,7 +18,7 @@ const page = (users, extra = {}) => ({
 });
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   localStorage.clear();
   sessionStorage.clear();
   window.history.pushState({}, '', '/admin');
@@ -36,13 +36,13 @@ beforeEach(() => {
 });
 
 const table = async () => { await screen.findAllByText('Anna Schmidt'); return screen.getByRole('table'); };
-const rowOf = (tbl, text) => within(tbl).getByText(text).closest('tr'); // eslint-disable-line testing-library/no-node-access
+const rowOf = (tbl, text) => within(tbl).getByText(text).closest('tr');
 
 test('shows summary cards, rows and the result range', async () => {
   render(<App />);
   const tbl = await table();
   expect(within(rowOf(tbl, 'Anna Schmidt')).getByText('@anna · anna@example.com')).toBeInTheDocument();
-  expect(screen.getByText('Total users').closest('button')).toHaveTextContent('2'); // eslint-disable-line testing-library/no-node-access
+  expect(screen.getByText('Total users').closest('button')).toHaveTextContent('2');
   expect(screen.getByText(/Showing/)).toHaveTextContent('Showing 1–2 of 2');
   // no actions on your own row
   expect(within(rowOf(tbl, 'boss')).queryByLabelText('Deactivate')).not.toBeInTheDocument();

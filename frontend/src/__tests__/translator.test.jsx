@@ -3,8 +3,8 @@ import * as api from '../api';
 import TranslatorPage from '../pages/TranslatorPage';
 import { ToastProvider } from '../components/Toast';
 
-jest.mock('../api');
-beforeEach(() => { localStorage.clear(); jest.resetAllMocks(); });
+vi.mock('../api');
+beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); });
 
 test('translates English to German and remembers it', async () => {
   api.translateText.mockResolvedValue({ data: { translation: 'Wo ist der Bahnhof?' } });

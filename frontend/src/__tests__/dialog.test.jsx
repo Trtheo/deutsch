@@ -12,7 +12,7 @@ function Harness({ onResult }) {
 }
 
 const setup = () => {
-  const onResult = jest.fn();
+  const onResult = vi.fn();
   render(<DialogProvider><Harness onResult={onResult} /></DialogProvider>);
   return onResult;
 };

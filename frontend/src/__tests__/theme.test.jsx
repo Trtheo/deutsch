@@ -10,7 +10,7 @@ beforeEach(() => {
   document.documentElement.classList.remove('dark');
   systemDark = false;
   listeners = [];
-  window.matchMedia = jest.fn(() => ({
+  window.matchMedia = vi.fn(() => ({
     get matches() { return systemDark; },
     addEventListener: (_, fn) => listeners.push(fn),
     removeEventListener: (_, fn) => { listeners = listeners.filter(l => l !== fn); },

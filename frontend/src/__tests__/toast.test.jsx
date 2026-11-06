@@ -11,8 +11,8 @@ function Buttons() {
   );
 }
 
-beforeEach(() => jest.useFakeTimers());
-afterEach(() => jest.useRealTimers());
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
 
 const setup = () => render(<ToastProvider><Buttons /></ToastProvider>);
 
@@ -22,9 +22,9 @@ test('toasts last 4 seconds', () => {
   fireEvent.click(screen.getByText('ok'));
   expect(screen.getByRole('status')).toHaveTextContent('Profile updated successfully!');
 
-  act(() => jest.advanceTimersByTime(3900));
+  act(() => vi.advanceTimersByTime(3900));
   expect(screen.getByText('Profile updated successfully!')).toBeInTheDocument();
-  act(() => jest.advanceTimersByTime(200));
+  act(() => vi.advanceTimersByTime(200));
   expect(screen.queryByText('Profile updated successfully!')).not.toBeInTheDocument();
 });
 
@@ -38,12 +38,12 @@ test('hovering pauses the timer so the message can be read', () => {
   setup();
   fireEvent.click(screen.getByText('fail'));
   const toast = screen.getByRole('alert');
-  act(() => jest.advanceTimersByTime(3000));
+  act(() => vi.advanceTimersByTime(3000));
   fireEvent.mouseEnter(toast);
-  act(() => jest.advanceTimersByTime(10000));
+  act(() => vi.advanceTimersByTime(10000));
   expect(screen.getByRole('alert')).toBeInTheDocument();
   fireEvent.mouseLeave(toast);
-  act(() => jest.advanceTimersByTime(1100)); // the remaining ~1 s
+  act(() => vi.advanceTimersByTime(1100)); // the remaining ~1 s
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 
