@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { generateExam, getLessons, getExams, deleteExam } from '../api';
+import { generateExam, getLessons, getExams, deleteExam, submitExam } from '../api';
 import { LevelBadge, ConfirmDelete, MicButton } from '../components/UI';
 import { speak } from '../speech';
 import { useApp } from '../context/AppContext';
@@ -36,7 +36,7 @@ export default function ExamsPage() {
   const [history, setHistory] = useState([]);
   const [deleteId, setDeleteId] = useState(null);
   const [activeMainTab, setActiveMainTab] = useState('new');
-  const { markProgress } = useApp();
+  const { applyServerProgress } = useApp();
 
   useEffect(() => {
     getLessons().then(r => setLessons(r.data)).catch(() => {});
@@ -85,29 +85,23 @@ export default function ExamsPage() {
     }
   };
 
-  const isOpenEnded = (part) => part === 'writing' || part === 'speaking';
-
-  const handleSubmit = () => {
-    if (!exam) return;
-    let correct = 0, total = 0;
-    PARTS.forEach(part => {
-      (exam.parts[part] || []).forEach((q, i) => {
-        const key = `${part}-${i}`;
-        const ans = answers[key]?.toLowerCase().trim();
-        total++;
-        if (isOpenEnded(part)) {
-          if (ans && ans.length > 0) correct++;
-        } else {
-          if (ans && ans === q.answer?.toLowerCase().trim()) correct++;
-        }
-      });
-    });
-    const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
-    setScore({ correct, total, pct });
-    setSubmitted(true);
-    markProgress(lessonSlug, 'completed', correct * 5, { examId: exam._id, score: correct, total, pct });
-    // refresh history so the new score appears immediately
-    loadHistory();
+  // The server grades the exam and returns it with the answers and explanations for the review
+  const [submitting, setSubmitting] = useState(false);
+  const handleSubmit = async () => {
+    if (!exam || submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await submitExam(exam._id, answers);
+      const { result } = res.data;
+      setExam(res.data.exam);
+      setScore({ correct: result.correct, total: result.total, pct: result.pct });
+      setSubmitted(true);
+      applyServerProgress(res.data.progress);
+      toast.success(`${result.correct} of ${result.total} correct · +${result.xp} XP`);
+      loadHistory();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not submit the exam. Check your connection and try again.');
+    } finally { setSubmitting(false); }
   };
 
   const currentQuestions = exam?.parts?.[activeTab] || [];
@@ -306,8 +300,8 @@ export default function ExamsPage() {
           {/* Submit */}
           {!submitted && (
             <div className="flex items-center gap-4">
-              <button className="btn-primary flex-1 py-3 text-base" onClick={handleSubmit}>
-                Submit Exam
+              <button className="btn-primary flex-1 py-3 text-base" onClick={handleSubmit} disabled={submitting}>
+                {submitting ? 'Grading…' : 'Submit Exam'}
               </button>
               <div className="text-sm text-gray-500 dark:text-gray-400 text-right">
                 {totalAnswered}/{totalQuestions} answered

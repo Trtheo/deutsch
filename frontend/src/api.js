@@ -66,6 +66,7 @@ export const updateProgress = (data) => api.post('/progress', data);
 // Exams
 export const generateExam = (data) => api.post('/exams/generate', data);
 export const getExam      = (id)   => api.get(`/exams/${id}`);
+export const submitExam   = (id, answers) => api.post(`/exams/${id}/submit`, { answers }); // graded on the server
 export const getExams     = (params) => api.get('/exams', { params });
 export const deleteExam   = (id)   => api.delete(`/exams/${id}`);
 

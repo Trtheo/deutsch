@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const { Lesson, Exam, Progress, User, Contact, Comment, Message } = require('./models');
 const { seedDatabase } = require('./seed');
 const { buildFallbackExam } = require('./fallback');
-const { hasExamBank, buildExamFromBank, buildExamFromContent } = require('./examBank');
+const { hasExamBank, buildExamFromBank, buildExamFromContent, examForStudent, gradeExam } = require('./examBank');
 const mailer = require('./mailer');
 const emails = require('./emails');
 const { translate, TranslateError } = require('./translate');
@@ -835,24 +835,52 @@ app.post('/api/exams/generate', authMiddleware, async (req, res) => {
       ? buildExamFromBank(lesson, questionCount)
       : (buildExamFromContent(lesson, questionCount) || buildFallbackExam(lesson, lesson.level, questionCount));
     const exam = await Exam.create({ lessonSlug, lessonTitle: lesson.title, level: lesson.level, questionCount, parts, createdBy: req.user.id, aiGenerated: false });
-    res.json({ ...exam.toObject(), fromBank });
+    res.json({ ...examForStudent(exam), fromBank });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/exams', async (req, res) => {
+app.get('/api/exams', authMiddleware, async (req, res) => {
   try {
     const { lessonSlug } = req.query;
-    const filter = lessonSlug ? { lessonSlug } : {};
-    const exams = await Exam.find(filter).select('-parts').sort({ createdAt: -1 }).limit(50);
+    const filter = { createdBy: String(req.user.id), ...(lessonSlug ? { lessonSlug } : {}) };
+    const exams = await Exam.find(filter).select('-parts -result.answers').sort({ createdAt: -1 }).limit(50);
     res.json(exams);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/exams/:id', async (req, res) => {
+app.get('/api/exams/:id', authMiddleware, async (req, res) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: 'Exam not found' });
     const exam = await Exam.findById(req.params.id);
-    if (!exam) return res.status(404).json({ error: 'Exam not found' });
-    res.json(exam);
+    if (!exam || !canModify(req, exam)) return res.status(404).json({ error: 'Exam not found' });
+    res.json(examForStudent(exam));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Grades on the server, once. Returns the full exam (answers and explanations) for the review.
+app.post('/api/exams/:id/submit', authMiddleware, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: 'Exam not found' });
+    const exam = await Exam.findById(req.params.id);
+    if (!exam || exam.createdBy !== String(req.user.id)) return res.status(404).json({ error: 'Exam not found' });
+    if (exam.result) return res.status(409).json({ error: 'This exam was already submitted. Start a new exam to practise again.', exam: exam.toObject() });
+
+    const result = gradeExam(exam, req.body.answers || {});
+    exam.result = result;
+    exam.submittedAt = new Date();
+    exam.lastScore = result.pct;
+    await exam.save();
+
+    const progress = await Progress.findOneAndUpdate(
+      { userId: String(req.user.id), lessonSlug: exam.lessonSlug },
+      {
+        $set: { userId: String(req.user.id), lessonSlug: exam.lessonSlug, status: 'completed', lastActivity: new Date() },
+        $inc: { xp: result.xp },
+        $push: { examScores: { examId: String(exam._id), score: result.correct, total: result.total, date: new Date() } },
+      },
+      { upsert: true, returnDocument: 'after' },
+    );
+    res.json({ exam: exam.toObject(), result, progress });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -896,24 +924,29 @@ app.get('/api/progress', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+const XP_OPEN = 10;      // first time a lesson is opened
+const XP_COMPLETE = 50;  // first time a lesson is completed
+
 app.post('/api/progress', authMiddleware, async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { lessonSlug, status, xp, examScore } = req.body;
+    // XP is decided here, never taken from the browser: +10 the first time a lesson is opened,
+    // +50 the first time it is completed. Exam XP is added when an exam is graded (/exams/:id/submit).
+    const userId = String(req.user.id);
+    const { lessonSlug, status } = req.body;
     if (!lessonSlug) return res.status(400).json({ error: 'lessonSlug is required' });
+    if (status && !['in_progress', 'completed'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    if (!(await Lesson.exists({ slug: lessonSlug }))) return res.status(404).json({ error: 'Lesson not found' });
+
+    const existing = await Progress.findOne({ userId, lessonSlug });
+    let xp = 0;
+    if (!existing) xp += status === 'completed' ? XP_COMPLETE : XP_OPEN;
+    else if (status === 'completed' && existing.status !== 'completed') xp += XP_COMPLETE;
+
     const update = { $set: { userId, lessonSlug, lastActivity: new Date() } };
-    if (status) update.$set.status = status;
-    if (xp) {
-      const existing = await Progress.findOne({ userId, lessonSlug });
-      if (!existing || existing.status !== 'completed' || status !== 'completed') {
-        update.$inc = { xp };
-      }
-    }
-    if (examScore) update.$push = { examScores: { ...examScore, date: new Date() } };
+    // Never move a completed lesson back to "in progress"
+    if (status && !(existing?.status === 'completed' && status === 'in_progress')) update.$set.status = status;
+    if (xp) update.$inc = { xp };
     const prog = await Progress.findOneAndUpdate({ userId, lessonSlug }, update, { upsert: true, returnDocument: 'after' });
-    if (examScore?.examId) {
-      await Exam.findByIdAndUpdate(examScore.examId, { lastScore: examScore.pct }).catch(() => {});
-    }
     res.json(prog);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

@@ -53,6 +53,27 @@ async function registerUser(overrides = {}) {
   return verified.body;
 }
 
+// Creates the built-in Shopping lesson (it has a hand-written question bank)
+async function createShoppingLesson() {
+  const { meta, ...shopping } = require('../content')[0];
+  if (!(await Lesson.exists({ slug: shopping.slug }))) await Lesson.create(shopping);
+  return shopping;
+}
+
+// Starts an exam and submits it, answering `correctShare` of the questions correctly (using the bank's answers)
+async function takeExam(token, lessonSlug, correctShare = 1) {
+  const started = await request(app).post('/api/exams/generate').set(auth(token)).send({ lessonSlug, questionCount: 10 });
+  const full = await Exam.findById(started.body._id).lean();
+  const answers = {};
+  const keys = [];
+  for (const part of ['filling', 'writing', 'speaking', 'reading', 'listening']) {
+    full.parts[part].forEach((q, i) => keys.push([`${part}-${i}`, q]));
+  }
+  const wanted = Math.round(keys.length * correctShare);
+  keys.forEach(([key, q], n) => { answers[key] = n < wanted ? q.answer : (q.options?.find(o => o !== q.answer) ?? ''); });
+  return request(app).post(`/api/exams/${started.body._id}/submit`).set(auth(token)).send({ answers });
+}
+
 async function makeAdmin(user) {
   await User.updateOne({ _id: user.user.id }, { role: 'admin' });
   const res = await request(app).post('/api/auth/login').send({ email: user.user.email, password: 'secret123' });
@@ -107,6 +128,7 @@ describe('auth', () => {
 
   test('reset link: token stored only as a hash, works once, and signs out old sessions', async () => {
     const { token: oldSession } = await registerUser();
+    await new Promise(r => setTimeout(r, 1100)); // tokens are timed in whole seconds
     sentMail.length = 0;
     await request(app).post('/api/auth/forgot-password').send({ email: 'anna@example.com' });
     const link = sentMail[0].text.match(/reset-password\?token=([a-f0-9]+)&email=(\S+)/);
@@ -374,8 +396,11 @@ describe('admin users table', () => {
     const admin = await registerUser({ username: 'boss', email: 'boss@example.com' });
     const adminToken = await makeAdmin(admin);
     const anna = await registerUser();
-    await request(app).post('/api/progress').set(auth(anna.token)).send({ lessonSlug: 'alphabet', status: 'completed', xp: 50, examScore: { score: 8, total: 10 } });
-    await request(app).post('/api/progress').set(auth(anna.token)).send({ lessonSlug: 'numbers', status: 'in_progress', xp: 10, examScore: { score: 6, total: 10 } });
+    await createShoppingLesson();
+    await Lesson.create({ slug: 'numbers', title: 'Numbers', level: 'A1', category: 'numbers' });
+    await request(app).post('/api/progress').set(auth(anna.token)).send({ lessonSlug: 'numbers', status: 'in_progress' }); // +10
+    await takeExam(anna.token, 'a1-shopping', 1);     // 10 of 10 → +50 exam XP, lesson completed
+    await takeExam(anna.token, 'a1-shopping', 0.6);   // 6 of 10  → +30
 
     const res = await request(app).get(`/api/admin/users/${anna.user.id}`).set(auth(adminToken));
     assert.equal(res.status, 200);
@@ -383,7 +408,7 @@ describe('admin users table', () => {
     assert.equal(res.body.password, undefined);
     assert.equal(res.body.verifyTokenHash, undefined);
     assert.deepEqual({ ...res.body.stats, lastActivity: undefined }, {
-      xp: 60, lessonsCompleted: 1, lessonsInProgress: 1, examsTaken: 2, averageScore: 70, bestScore: 80, comments: 0, lastActivity: undefined,
+      xp: 90, lessonsCompleted: 1, lessonsInProgress: 1, examsTaken: 2, averageScore: 80, bestScore: 100, comments: 0, lastActivity: undefined,
     });
     assert.ok(res.body.stats.lastActivity);
 
@@ -642,11 +667,15 @@ describe('lessons and exams (no AI)', () => {
     assert.equal(res.body.aiGenerated, false);
     const words = ['train', 'station', 'ticket', 'platform', 'delay'];
     for (const q of res.body.parts.filling) {
-      assert.ok(words.includes(q.answer), q.answer);
+      assert.equal(q.answer, undefined, 'answers are hidden before submission');
       assert.equal(q.options.length, 4);
+    }
+    const full = await Exam.findById(res.body._id).lean();
+    for (const q of full.parts.filling) {
+      assert.ok(words.includes(q.answer), q.answer);
       assert.ok(q.options.includes(q.answer));
     }
-    for (const q of res.body.parts.listening) assert.ok(q.options.includes(q.answer));
+    for (const q of full.parts.listening) assert.ok(q.options.includes(q.answer));
   });
 
   test('exams for unknown lessons are refused', async () => {
@@ -763,11 +792,14 @@ describe('resource uploads', () => {
 });
 
 describe('progress', () => {
+  const greetings = () => Lesson.create({ slug: 'greetings', title: 'Greetings', level: 'A1', category: 'vocabulary' });
+
   test('progress is stored per user', async () => {
+    await greetings();
     const anna = await registerUser();
     const ben = await registerUser({ username: 'ben', email: 'ben@example.com' });
 
-    await request(app).post('/api/progress').set(auth(anna.token)).send({ lessonSlug: 'greetings', status: 'completed', xp: 50 });
+    await request(app).post('/api/progress').set(auth(anna.token)).send({ lessonSlug: 'greetings', status: 'completed' });
 
     const mine = await request(app).get('/api/progress').set(auth(anna.token));
     const theirs = await request(app).get('/api/progress').set(auth(ben.token));
@@ -777,6 +809,7 @@ describe('progress', () => {
   });
 
   test('completing a lesson twice does not award XP twice', async () => {
+    await greetings();
     const { token } = await registerUser();
     const body = { lessonSlug: 'greetings', status: 'completed', xp: 50 };
     await request(app).post('/api/progress').set(auth(token)).send(body);
@@ -789,5 +822,77 @@ describe('progress', () => {
     const { token } = await registerUser();
     const res = await request(app).post('/api/progress').set(auth(token)).send({ status: 'completed' });
     assert.equal(res.status, 400);
+  });
+
+  test('XP comes from the server: whatever the browser claims is ignored', async () => {
+    await greetings();
+    const { token } = await registerUser();
+    let res = await request(app).post('/api/progress').set(auth(token)).send({ lessonSlug: 'greetings', status: 'in_progress', xp: 99999 });
+    assert.equal(res.body.xp, 10, 'opening a lesson: +10');
+    res = await request(app).post('/api/progress').set(auth(token)).send({ lessonSlug: 'greetings', status: 'in_progress', xp: 10 });
+    assert.equal(res.body.xp, 10, 'opening again: nothing');
+    res = await request(app).post('/api/progress').set(auth(token)).send({ lessonSlug: 'greetings', status: 'completed', xp: 99999, examScore: { score: 10, total: 10 } });
+    assert.equal(res.body.xp, 60, 'completing: +50');
+    assert.equal(res.body.examScores.length, 0, 'exam scores can only come from graded exams');
+    res = await request(app).post('/api/progress').set(auth(token)).send({ lessonSlug: 'greetings', status: 'in_progress' });
+    assert.equal(res.body.status, 'completed', 'a completed lesson stays completed');
+  });
+
+  test('unknown lessons are refused', async () => {
+    const { token } = await registerUser();
+    const res = await request(app).post('/api/progress').set(auth(token)).send({ lessonSlug: 'made-up', status: 'completed' });
+    assert.equal(res.status, 404);
+  });
+});
+
+describe('exams are graded on the server', () => {
+  test('answers are hidden until the exam is submitted', async () => {
+    await createShoppingLesson();
+    const { token } = await registerUser();
+    const started = await request(app).post('/api/exams/generate').set(auth(token)).send({ lessonSlug: 'a1-shopping' });
+    const all = Object.values(started.body.parts).flat();
+    assert.ok(all.length > 0);
+    for (const part of ['filling', 'reading', 'listening']) {
+      for (const q of started.body.parts[part]) {
+        assert.equal(q.answer, undefined);
+        assert.equal(q.explanation, undefined);
+      }
+    }
+    for (const q of started.body.parts.writing) assert.equal(q.answer, undefined, 'model answers too');
+    const again = await request(app).get(`/api/exams/${started.body._id}`).set(auth(token));
+    assert.equal(again.body.parts.filling[0].answer, undefined, 'also when reloaded');
+  });
+
+  test('submitting grades it, records the score and XP once, and reveals the answers', async () => {
+    await createShoppingLesson();
+    const { token } = await registerUser();
+    const res = await takeExam(token, 'a1-shopping', 0.6);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.result.correct, 6);
+    assert.equal(res.body.result.total, 10);
+    assert.equal(res.body.result.pct, 60);
+    assert.equal(res.body.result.xp, 30);
+    assert.equal(res.body.progress.xp, 30);
+    assert.equal(res.body.progress.status, 'completed');
+    assert.ok(res.body.exam.parts.filling[0].answer, 'answers revealed for the review');
+
+    const again = await request(app).post(`/api/exams/${res.body.exam._id}/submit`).set(auth(token)).send({ answers: {} });
+    assert.equal(again.status, 409, 'an exam can be submitted only once');
+    const progress = await Progress.findOne({ lessonSlug: 'a1-shopping' });
+    assert.equal(progress.xp, 30, 'no extra XP');
+  });
+
+  test('you can only see and submit your own exams, and history shows only yours', async () => {
+    await createShoppingLesson();
+    const anna = await registerUser();
+    const ben = await registerUser({ username: 'ben', email: 'ben@example.com' });
+    const started = await request(app).post('/api/exams/generate').set(auth(anna.token)).send({ lessonSlug: 'a1-shopping' });
+    const id = started.body._id;
+    assert.equal((await request(app).get(`/api/exams/${id}`).set(auth(ben.token))).status, 404);
+    assert.equal((await request(app).post(`/api/exams/${id}/submit`).set(auth(ben.token)).send({ answers: {} })).status, 404);
+    assert.equal((await request(app).get(`/api/exams/${id}`)).status, 401);
+    assert.equal((await request(app).get('/api/exams').set(auth(anna.token))).body.length, 1);
+    assert.equal((await request(app).get('/api/exams').set(auth(ben.token))).body.length, 0);
+    assert.equal((await request(app).get('/api/exams')).status, 401);
   });
 });

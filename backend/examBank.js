@@ -85,4 +85,46 @@ function buildExamFromContent(lesson, questionCount = 10) {
   return { parts: { filling, writing, speaking, reading, listening } };
 }
 
-module.exports = { hasExamBank, buildExamFromBank, buildExamFromContent };
+// ── Grading on the server ─────────────────────────────────
+// Before submission the student sees the questions without the answers. Speaking tasks keep their
+// sentence: saying it aloud is the exercise.
+const HIDDEN = { filling: ['answer', 'explanation', 'explanationEn'], reading: ['answer', 'explanation', 'explanationEn'],
+  listening: ['answer', 'explanation', 'explanationEn'], writing: ['answer', 'answerEn', 'tip'], speaking: [] };
+const OPEN_ENDED = new Set(['writing', 'speaking']);
+const XP_PER_CORRECT = 5;
+
+function examForStudent(exam) {
+  const e = typeof exam.toObject === 'function' ? exam.toObject() : exam;
+  if (e.result) return e; // graded: answers are part of the review
+  const parts = {};
+  for (const part of PARTS) {
+    parts[part] = (e.parts?.[part] || []).map(q => {
+      const copy = { ...q };
+      for (const field of HIDDEN[part]) delete copy[field];
+      return copy;
+    });
+  }
+  return { ...e, parts };
+}
+
+// answers: { 'filling-0': 'Äpfel', 'writing-1': '…' }. Open-ended answers count when not empty.
+function gradeExam(exam, answers = {}) {
+  let correct = 0, total = 0;
+  const kept = {};
+  for (const part of PARTS) {
+    (exam.parts?.[part] || []).forEach((q, i) => {
+      const key = `${part}-${i}`;
+      const given = typeof answers[key] === 'string' ? answers[key].slice(0, 2000) : '';
+      if (given) kept[key] = given;
+      total++;
+      const ok = OPEN_ENDED.has(part)
+        ? given.trim().length > 0
+        : given.trim().toLowerCase() === String(q.answer || '').trim().toLowerCase();
+      if (ok) correct++;
+    });
+  }
+  const pct = total ? Math.round((correct / total) * 100) : 0;
+  return { correct, total, pct, xp: correct * XP_PER_CORRECT, answers: kept };
+}
+
+module.exports = { hasExamBank, buildExamFromBank, buildExamFromContent, examForStudent, gradeExam };

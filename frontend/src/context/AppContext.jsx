@@ -173,6 +173,19 @@ export function AppProvider({ children }) {
     });
   }, []);
 
+  // The server decides XP; its progress record replaces our optimistic local one
+  const applyServerProgress = useCallback((doc) => {
+    if (!doc?.lessonSlug) return;
+    setProgress(prev => {
+      const idx = prev.findIndex(p => p.lessonSlug === doc.lessonSlug);
+      const next = idx >= 0 ? prev.map((p, i) => i === idx ? doc : p) : [...prev, doc];
+      setTotalXP(next.reduce((sum, p) => sum + (p.xp || 0), 0));
+      setTodayXP(calcTodayXP(next));
+      setStreak(calcStreak(next));
+      return next;
+    });
+  }, []);
+
   const markProgress = useCallback(async (lessonSlug, status, xp = 0, examScore = null) => {
     // Always update UI immediately
     applyLocal(lessonSlug, status, xp);
@@ -184,23 +197,17 @@ export function AppProvider({ children }) {
 
     try {
       const res = await updateProgress({ lessonSlug, status, xp, examScore });
-      setProgress(prev => {
-        const idx = prev.findIndex(p => p.lessonSlug === lessonSlug);
-        const next = idx >= 0 ? prev.map((p, i) => i === idx ? res.data : p) : [...prev, res.data];
-        setTotalXP(next.reduce((sum, p) => sum + (p.xp || 0), 0));
-        setTodayXP(calcTodayXP(next));
-        setStreak(calcStreak(next));
-        return next;
-      });
-    } catch {
-      await enqueueProgress({ lessonSlug, status, xp, examScore }).catch(() => {});
+      applyServerProgress(res.data);
+    } catch (e) {
+      // Retry later only when offline/unreachable; a refusal from the server would fail forever
+      if (!e?.response) await enqueueProgress({ lessonSlug, status, xp, examScore }).catch(() => {});
     }
-  }, [applyLocal]);
+  }, [applyLocal, applyServerProgress]);
 
   const getLessonStatus = (slug) => progress.find(p => p.lessonSlug === slug)?.status || 'not_started';
 
   return (
-    <AppContext.Provider value={{ progress, totalXP, todayXP, streak, isOnline, dailyGoal, setDailyGoal, markProgress, getLessonStatus, darkMode, setDarkMode }}>
+    <AppContext.Provider value={{ progress, totalXP, todayXP, streak, isOnline, dailyGoal, setDailyGoal, markProgress, applyServerProgress, getLessonStatus, darkMode, setDarkMode }}>
       {children}
     </AppContext.Provider>
   );

@@ -26,8 +26,11 @@ const examSchema = new mongoose.Schema({
     listening: [mongoose.Schema.Types.Mixed],
   },
   aiGenerated: { type: Boolean, default: false },
-  createdBy: { type: String, default: null },
+  createdBy: { type: String, default: null, index: true },
   lastScore: { type: Number, default: null },
+  // Set once, when the student submits: { correct, total, pct, xp, answers }
+  result: { type: mongoose.Schema.Types.Mixed, default: null },
+  submittedAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now }
 });
 
