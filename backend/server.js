@@ -83,8 +83,12 @@ async function authMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Invalid token' });
   }
   try {
-    const account = await User.findById(payload.id).select('username role deactivated').lean();
+    const account = await User.findById(payload.id).select('username role deactivated passwordChangedAt').lean();
     if (!account) return res.status(401).json({ error: 'Invalid token' });
+    // Tokens carry their issue time in seconds; allow one second of rounding
+    if (account.passwordChangedAt && payload.iat * 1000 < account.passwordChangedAt.getTime() - 1000) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
     if (account.deactivated) return res.status(403).json(DEACTIVATED);
     req.user = { ...payload, username: account.username, role: account.role };
     next();
@@ -93,6 +97,7 @@ async function authMiddleware(req, res, next) {
 
 // ── Auth helpers ──────────────────────────────────────────
 const VERIFY_LINK_HOURS = 24;
+const MIN_PASSWORD = 8; // new and changed passwords; existing shorter ones still work
 // Never send these to any client, not even to admins
 const PRIVATE_USER_FIELDS = '-password -resetToken -resetTokenExpiry -verifyTokenHash -verifyTokenOldHashes -verifyTokenExpiry';
 
@@ -126,6 +131,17 @@ async function sendVerificationEmail(user, link) {
   }
 }
 
+// Login and password-reset attempts: 10 failed tries per 15 minutes per IP (successful logins don't count)
+const loginLimiter = rateLimit({
+  skip: skipLimitsInTests,
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait 15 minutes and try again.' },
+});
+
 // Resending emails: 5 per 15 minutes per IP
 const resendLimiter = rateLimit({
   skip: skipLimitsInTests,
@@ -141,7 +157,7 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { firstName = '', lastName = '', username, email, password, level = 'A1' } = req.body;
     if (!username || !email || !password) return res.status(400).json({ error: 'username, email and password are required' });
-    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    if (password.length < MIN_PASSWORD) return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD} characters` });
     const exists = await User.findOne({ $or: [{ email }, { username }] });
     if (exists) return res.status(409).json({ error: exists.email === email ? 'Email already registered' : 'Username already taken' });
     const hash = await bcrypt.hash(password, 10);
@@ -168,7 +184,7 @@ app.post('/api/auth/register', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
@@ -231,33 +247,35 @@ app.post('/api/auth/resend-verification', resendLimiter, async (req, res) => {
 });
 
 // ── Forgot / Reset password ───────────────────────────────
-app.post('/api/auth/forgot-password', async (req, res) => {
+// Same answer whether or not the email is registered, so it can't be used to find accounts
+const RESET_SENT = { message: 'If an account exists for that email, a reset link is on its way. Check your inbox and spam folder.' };
+app.post('/api/auth/forgot-password', resendLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required' });
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ error: 'No account found with that email address.' });
+    if (!user || user.deactivated) return res.json(RESET_SENT);
     const token = crypto.randomBytes(32).toString('hex');
-    user.resetToken = token;
+    user.resetToken = hashToken(token);
     user.resetTokenExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30 min
     await user.save();
     const resetLink = `${emails.appUrl()}/reset-password?token=${token}&email=${encodeURIComponent(user.email)}`;
     await mailer.sendMail({ to: user.email, ...emails.resetPassword({ name: displayName(user), link: resetLink, minutes: 30 }) });
-    console.log(`📧 Reset link sent to ${email}`);
-    res.json({ message: 'Password reset link sent to your email.' });
+    res.json(RESET_SENT);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/auth/reset-password', async (req, res) => {
+app.post('/api/auth/reset-password', loginLimiter, async (req, res) => {
   try {
     const { email, token, newPassword } = req.body;
     if (!email || !token || !newPassword) return res.status(400).json({ error: 'All fields are required' });
-    if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    const user = await User.findOne({ email, resetToken: token, resetTokenExpiry: { $gt: new Date() } });
+    if (newPassword.length < MIN_PASSWORD) return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD} characters` });
+    const user = await User.findOne({ email, resetToken: hashToken(token), resetTokenExpiry: { $gt: new Date() } });
     if (!user) return res.status(400).json({ error: 'Invalid or expired reset link. Please request a new one.' });
     user.password = await bcrypt.hash(newPassword, 10);
     user.resetToken = null;
     user.resetTokenExpiry = null;
+    user.passwordChangedAt = new Date(); // signs out every existing session
     await user.save();
     res.json({ message: 'Password reset successfully. You can now sign in.' });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -294,13 +312,15 @@ app.put('/api/auth/password', authMiddleware, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Both passwords required' });
-    if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    if (newPassword.length < MIN_PASSWORD) return res.status(400).json({ error: `New password must be at least ${MIN_PASSWORD} characters` });
     const user = await User.findById(req.user.id);
     const ok = await bcrypt.compare(currentPassword, user.password);
     if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
     user.password = await bcrypt.hash(newPassword, 10);
+    user.passwordChangedAt = new Date(); // signs out other devices
     await user.save();
-    res.json({ success: true });
+    // A fresh token keeps this device signed in
+    res.json({ success: true, token: sessionFor(user).token });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -633,7 +653,16 @@ app.put('/api/admin/users/:id/role', authMiddleware, adminMiddleware, async (req
 app.delete('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
-    await User.findByIdAndDelete(req.params.id);
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    // Remove everything that belongs to them, so nothing is left behind
+    const id = String(user._id);
+    await Promise.all([
+      Progress.deleteMany({ userId: id }),
+      Comment.deleteMany({ userId: id }),
+      Exam.deleteMany({ createdBy: id }),
+      Message.updateMany({}, { $pull: { readBy: id, recipients: id } }),
+    ]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

@@ -51,7 +51,7 @@ test('after registering, the user is asked to check their inbox instead of being
   fireEvent.click(screen.getByText('Create Account', { selector: 'button.flex-1' }));
   fireEvent.change(screen.getByPlaceholderText('e.g. john.doe42'), { target: { value: 'anna' } });
   fireEvent.change(screen.getAllByPlaceholderText('you@example.com')[0], { target: { value: 'anna@example.com' } });
-  fireEvent.change(screen.getByPlaceholderText('Min. 6 characters'), { target: { value: 'secret123' } });
+  fireEvent.change(screen.getByPlaceholderText('At least 8 characters'), { target: { value: 'secret123' } });
   await waitFor(() => expect(api.checkUsername).toHaveBeenCalled());
   await screen.findByText(/Username available/);
   fireEvent.click(screen.getByText('Create Account', { selector: 'button.btn-primary' }));
@@ -67,7 +67,7 @@ test('logging in before verifying offers to resend the email', async () => {
   renderAt('/');
 
   fireEvent.change(screen.getAllByPlaceholderText('you@example.com')[0], { target: { value: 'anna@example.com' } });
-  fireEvent.change(screen.getByPlaceholderText('Min. 6 characters'), { target: { value: 'secret123' } });
+  fireEvent.change(screen.getByPlaceholderText('Your password'), { target: { value: 'secret123' } });
   fireEvent.click(screen.getByText('Sign In', { selector: 'button.btn-primary' }));
 
   expect(await screen.findByText(/Please verify your email first/)).toBeInTheDocument();
@@ -95,4 +95,19 @@ test('an already verified account gets a friendly message instead of an error', 
   render(<MemoryRouter initialEntries={['/verify-email?token=abc&email=anna%40example.com']}><VerifyEmailPage /></MemoryRouter>);
   expect(await screen.findByText('Already verified')).toBeInTheDocument();
   expect(screen.getByText('Go to sign in')).toBeInTheDocument();
+});
+
+test('sign-up offers only levels that have lessons and needs 8-character passwords', async () => {
+  renderAt('/');
+  fireEvent.click(screen.getByText('Create Account', { selector: 'button.flex-1' }));
+  expect(screen.getByRole('button', { name: 'B1' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'B2' })).not.toBeInTheDocument();
+
+  fireEvent.change(screen.getByPlaceholderText('e.g. john.doe42'), { target: { value: 'anna' } });
+  fireEvent.change(screen.getAllByPlaceholderText('you@example.com')[0], { target: { value: 'anna@example.com' } });
+  fireEvent.change(screen.getByPlaceholderText('At least 8 characters'), { target: { value: 'short12' } });
+  await screen.findByText(/Username available/);
+  fireEvent.click(screen.getByText('Create Account', { selector: 'button.btn-primary' }));
+  expect(await screen.findByText('Password must be at least 8 characters.')).toBeInTheDocument();
+  expect(api.register).not.toHaveBeenCalled();
 });

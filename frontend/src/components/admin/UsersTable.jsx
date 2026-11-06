@@ -7,6 +7,7 @@ import { adminListUsers, adminSetUserStatus, adminUpdateRole, adminDeleteUser, a
 import { useDialog } from '../Dialog';
 import { useToast } from '../Toast';
 import UserDetailsModal from './UserDetailsModal';
+import { AVAILABLE_LEVELS } from '../../lessons';
 
 const DEFAULT_FILTERS = { q: '', role: '', status: '', level: '', verified: '' };
 const PAGE_SIZES = [10, 25, 50];
@@ -267,7 +268,7 @@ export default function UsersTable({ currentUserId, onUsersChanged }) {
                 <option value="">All statuses</option><option value="active">Active</option><option value="deactivated">Deactivated</option>
               </select>
               <select className={SELECT} value={filters.level} onChange={e => setFilter('level', e.target.value)} aria-label="Filter by level">
-                <option value="">All levels</option>{['A1', 'A2', 'B1', 'B2'].map(l => <option key={l} value={l}>{l}</option>)}
+                <option value="">All levels</option>{AVAILABLE_LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
               </select>
               <select className={SELECT} value={filters.verified} onChange={e => setFilter('verified', e.target.value)} aria-label="Filter by email verification">
                 <option value="">Any email</option><option value="yes">Verified</option><option value="no">Not verified</option>

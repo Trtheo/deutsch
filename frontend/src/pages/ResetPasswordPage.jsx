@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { resetPassword } from '../api';
 import { useToast } from '../components/Toast';
+import { MIN_PASSWORD } from '../lessons';
 
 export default function ResetPasswordPage() {
   const [params] = useSearchParams();
@@ -21,7 +22,7 @@ export default function ResetPasswordPage() {
   const handleSubmit = async () => {
     setError(''); setSuccess('');
     if (!newPassword || !confirm) return setError('Both fields are required.');
-    if (newPassword.length < 6) return setError('Password must be at least 6 characters.');
+    if (newPassword.length < MIN_PASSWORD) return setError(`Password must be at least ${MIN_PASSWORD} characters.`);
     if (newPassword !== confirm) return setError('Passwords do not match.');
     if (!token || !email) return setError('Invalid reset link. Please request a new one.');
     setLoading(true);
@@ -47,7 +48,7 @@ export default function ResetPasswordPage() {
           <div>
             <label className="text-gray-500 dark:text-gray-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">New Password</label>
             <div className="relative">
-              <input className="input pr-10" type={showPw ? 'text' : 'password'} placeholder="Min. 6 characters"
+              <input className="input pr-10" type={showPw ? 'text' : 'password'} placeholder={`At least ${MIN_PASSWORD} characters`}
                 value={newPassword} onChange={e => setNewPassword(e.target.value)} />
               <button type="button" onClick={() => setShowPw(s => !s)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">

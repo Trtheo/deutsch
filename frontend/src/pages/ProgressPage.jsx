@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { ProgressBar, LevelBadge, StatusBadge } from '../components/UI';
 import { Star, Flame, CheckCircle2, PlayCircle, Map, Trophy, ArrowRight } from 'lucide-react';
-import LESSONS from '../lessons';
+import LESSONS, { AVAILABLE_LEVELS } from '../lessons';
 import { computeAchievements } from '../achievements';
 
 // ── Helpers ───────────────────────────────────────────────
@@ -80,7 +80,7 @@ export default function ProgressPage() {
   const last30 = getLast30Days();
 
   // ── Level breakdown ──────────────────────────────────────
-  const levels = ['A1', 'A2', 'B1', 'B2'].map(level => {
+  const levels = AVAILABLE_LEVELS.map(level => {
     const all = LESSONS.filter(l => l.level === level);
     const done = all.filter(l => getLessonStatus(l.slug) === 'completed').length;
     const pct = all.length > 0 ? Math.round((done / all.length) * 100) : 0;

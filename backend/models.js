@@ -68,7 +68,8 @@ const userSchema = new mongoose.Schema({
   verifyTokenHash: { type: String, default: null },
   verifyTokenOldHashes: { type: [String], default: [] }, // earlier links that still work after a resend
   verifyTokenExpiry:{ type: Date, default: null },
-  resetToken:      { type: String, default: null },
+  resetToken:      { type: String, default: null }, // sha256 of the emailed token, never the token itself
+  passwordChangedAt: { type: Date, default: null },  // sessions started before this are signed out
   resetTokenExpiry:{ type: Date, default: null },
   createdAt:{ type: Date, default: Date.now }
 });

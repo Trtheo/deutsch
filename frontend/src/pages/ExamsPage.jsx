@@ -5,9 +5,10 @@ import { LevelBadge, ConfirmDelete, MicButton } from '../components/UI';
 import { speak } from '../speech';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../components/Toast';
+import { AVAILABLE_LEVELS } from '../lessons';
 import { PenLine, FileText, Mic, BookMarked, Headphones, Volume2, Bot, Brain, RotateCcw, Trophy, Lightbulb, Trash2 } from 'lucide-react';
 
-const LEVELS = ['A1', 'A2', 'B1', 'B2'];
+const LEVELS = AVAILABLE_LEVELS;
 const COUNTS = [10, 20, 30];
 const PARTS = ['filling', 'writing', 'speaking', 'reading', 'listening'];
 const PART_META = {

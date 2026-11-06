@@ -4,6 +4,7 @@ import { initialDark, saveThemeChoice, applyTheme, watchSystemTheme } from '../t
 import { Eye, EyeOff, Sun, Moon, MailCheck } from 'lucide-react';
 import { register as apiRegister, login as apiLogin, updateProfile, updatePassword, forgotPassword, checkUsername, resendVerification } from '../api';
 import VerifyEmailPage from '../pages/VerifyEmailPage';
+import { AVAILABLE_LEVELS, MIN_PASSWORD } from '../lessons';
 import { useToast } from '../components/Toast';
 import ResetPasswordPage from '../pages/ResetPasswordPage';
 
@@ -99,8 +100,8 @@ function AuthScreen({ onDone }) {
       if (!form.email) return setError('Email is required.');
       setLoading(true);
       try {
-        await forgotPassword({ email: form.email });
-        setSuccess('Reset link sent! Check your inbox.');
+        const res = await forgotPassword({ email: form.email });
+        setSuccess(res.data?.message || 'If an account exists for that email, a reset link is on its way.');
       } catch (e) { setError(e.response?.data?.error || 'Something went wrong.'); }
       finally { setLoading(false); }
       return;
@@ -110,7 +111,7 @@ function AuthScreen({ onDone }) {
     if (mode === 'register' && !form.username) return setError('Username is required.');
     if (mode === 'register' && usernameStatus === 'taken') return setError('That username is already taken. Please choose another.');
     if (mode === 'register' && usernameStatus === 'checking') return setError('Please wait while we check username availability.');
-    if (mode === 'register' && form.password.length < 6) return setError('Password must be at least 6 characters.');
+    if (mode === 'register' && form.password.length < MIN_PASSWORD) return setError(`Password must be at least ${MIN_PASSWORD} characters.`);
     setLoading(true);
     setUnverifiedEmail('');
     try {
@@ -159,7 +160,7 @@ function AuthScreen({ onDone }) {
         <div className="text-center">
           <img src={`${process.env.PUBLIC_URL}/logo.svg`} alt="" className="w-20 h-20 mx-auto mb-3" />
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Deutsch Lernen</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Learn German from A1 to B2</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Learn German from A1 to B1</p>
         </div>
 
         {/* Tab toggle — only for login/register */}
@@ -266,7 +267,7 @@ function AuthScreen({ onDone }) {
               <div>
                 <label className="text-gray-500 dark:text-gray-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Password</label>
                 <div className="relative">
-                  <input className="input pr-10" type={showPassword ? 'text' : 'password'} placeholder="Min. 6 characters" value={form.password}
+                  <input className="input pr-10" type={showPassword ? 'text' : 'password'} placeholder={mode === 'register' ? `At least ${MIN_PASSWORD} characters` : 'Your password'} value={form.password}
                     onChange={e => set('password', e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
                   <button type="button" onClick={() => setShowPassword(s => !s)}
@@ -289,7 +290,7 @@ function AuthScreen({ onDone }) {
             <div>
               <label className="text-gray-500 dark:text-gray-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Starting Level</label>
               <div className="grid grid-cols-4 gap-2">
-                {['A1', 'A2', 'B1', 'B2'].map(l => (
+                {AVAILABLE_LEVELS.map(l => (
                   <button key={l} onClick={() => set('level', l)}
                     className={`py-2 rounded-xl text-sm font-bold transition-all
                       ${form.level === l ? 'bg-yellow-400 text-gray-900' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
@@ -354,7 +355,9 @@ export function AuthProvider({ children }) {
   }, [user]);
 
   const savePassword = useCallback(async (data) => {
-    await updatePassword(data);
+    const res = await updatePassword(data);
+    // Other devices are signed out; this one gets a fresh token
+    if (res.data?.token) localStorage.setItem(TOKEN_KEY, res.data.token);
   }, []);
 
   if (!user) {

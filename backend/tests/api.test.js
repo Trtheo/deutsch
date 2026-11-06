@@ -94,9 +94,47 @@ describe('auth', () => {
     assert.equal(res.status, 401);
   });
 
-  test('forgot-password returns 404 for unknown emails', async () => {
-    const res = await request(app).post('/api/auth/forgot-password').send({ email: 'nobody@example.com' });
-    assert.equal(res.status, 404);
+  test('forgot-password gives the same answer for unknown emails and sends nothing', async () => {
+    await registerUser();
+    sentMail.length = 0;
+    const unknown = await request(app).post('/api/auth/forgot-password').send({ email: 'nobody@example.com' });
+    const known = await request(app).post('/api/auth/forgot-password').send({ email: 'anna@example.com' });
+    assert.equal(unknown.status, 200);
+    assert.deepEqual(unknown.body, known.body);
+    assert.equal(sentMail.length, 1);
+    assert.equal(sentMail[0].to, 'anna@example.com');
+  });
+
+  test('reset link: token stored only as a hash, works once, and signs out old sessions', async () => {
+    const { token: oldSession } = await registerUser();
+    sentMail.length = 0;
+    await request(app).post('/api/auth/forgot-password').send({ email: 'anna@example.com' });
+    const link = sentMail[0].text.match(/reset-password\?token=([a-f0-9]+)&email=(\S+)/);
+    const stored = await User.findOne({ email: 'anna@example.com' });
+    assert.notEqual(stored.resetToken, link[1], 'only a hash is stored');
+
+    const body = { email: 'anna@example.com', token: link[1], newPassword: 'brand-new-pass' };
+    assert.equal((await request(app).post('/api/auth/reset-password').send(body)).status, 200);
+    assert.equal((await request(app).post('/api/auth/reset-password').send(body)).status, 400, 'link works once');
+    assert.equal((await request(app).get('/api/auth/me').set(auth(oldSession))).status, 401, 'old session signed out');
+    assert.equal((await request(app).post('/api/auth/login').send({ email: 'anna@example.com', password: 'brand-new-pass' })).status, 200);
+  });
+
+  test('new passwords need at least 8 characters', async () => {
+    const res = await request(app).post('/api/auth/register').send({ username: 'x1', email: 'x1@example.com', password: 'short12' });
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /at least 8/);
+  });
+
+  test('changing the password keeps this device signed in and signs out the others', async () => {
+    const first = await registerUser();
+    const second = (await request(app).post('/api/auth/login').send({ email: 'anna@example.com', password: 'secret123' })).body.token;
+    await new Promise(r => setTimeout(r, 1100)); // tokens are timed in whole seconds
+    const res = await request(app).put('/api/auth/password').set(auth(first.token)).send({ currentPassword: 'secret123', newPassword: 'another-pass-1' });
+    assert.equal(res.status, 200);
+    assert.ok(res.body.token);
+    assert.equal((await request(app).get('/api/auth/me').set(auth(res.body.token))).status, 200);
+    assert.equal((await request(app).get('/api/auth/me').set(auth(second))).status, 401);
   });
 
   test('a tampered token is rejected', async () => {
@@ -351,6 +389,31 @@ describe('admin users table', () => {
 
     assert.equal((await request(app).get('/api/admin/users/not-an-id').set(auth(adminToken))).status, 404);
     assert.equal((await request(app).get(`/api/admin/users/${anna.user.id}`).set(auth(anna.token))).status, 403);
+  });
+});
+
+describe('deleting a user', () => {
+  test('removes their progress, comments, exams and message traces too', async () => {
+    const admin = await registerUser({ username: 'boss', email: 'boss@example.com' });
+    const adminToken = await makeAdmin(admin);
+    const anna = await registerUser();
+    const { meta, ...shopping } = require('../content')[0];
+    await Lesson.create(shopping);
+    await request(app).post('/api/progress').set(auth(anna.token)).send({ lessonSlug: 'a1-shopping', status: 'completed', xp: 50 });
+    await request(app).post(`/api/lessons/a1-shopping/comments`).set(auth(anna.token)).send({ text: 'Super!' });
+    await request(app).post('/api/exams/generate').set(auth(anna.token)).send({ lessonSlug: 'a1-shopping' });
+    await request(app).post('/api/admin/broadcast').set(auth(adminToken)).send({ subject: 'Hi', message: 'x', userIds: [anna.user.id] });
+    await request(app).post('/api/messages/read-all').set(auth(anna.token));
+
+    const res = await request(app).delete(`/api/admin/users/${anna.user.id}`).set(auth(adminToken));
+    assert.equal(res.status, 200);
+    const { Comment, Message } = require('../models');
+    assert.equal(await Progress.countDocuments({ userId: anna.user.id }), 0);
+    assert.equal(await Comment.countDocuments({ userId: anna.user.id }), 0);
+    assert.equal(await Exam.countDocuments({ createdBy: anna.user.id }), 0);
+    const msg = await Message.findOne();
+    assert.ok(!msg.readBy.includes(anna.user.id) && !msg.recipients.includes(anna.user.id));
+    assert.equal((await request(app).delete(`/api/admin/users/${anna.user.id}`).set(auth(adminToken))).status, 404);
   });
 });
 

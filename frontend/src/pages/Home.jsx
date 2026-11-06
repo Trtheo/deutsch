@@ -133,7 +133,6 @@ export default function Home() {
             { level: 'A1', desc: 'Beginner', descDe: 'Anfänger' },
             { level: 'A2', desc: 'Elementary', descDe: 'Grundstufe' },
             { level: 'B1', desc: 'Intermediate', descDe: 'Mittelstufe' },
-            { level: 'B2', desc: 'Upper-Intermediate', descDe: 'Obere Mittelstufe' },
           ].map(l => (
             <div key={l.level} className="rounded-xl p-3 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
               <LevelBadge level={l.level} />

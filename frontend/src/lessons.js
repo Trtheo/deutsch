@@ -23,6 +23,12 @@ const CORE_LESSONS = [
 ];
 
 const LEVEL_ORDER = ['A1', 'A2', 'B1', 'B2'];
+
+// Levels that have lessons. Add 'B2' here when B2 content exists; every level picker uses this list.
+export const AVAILABLE_LEVELS = ['A1', 'A2', 'B1'];
+
+// Shortest password the server accepts for new and changed passwords
+export const MIN_PASSWORD = 8;
 const rank = l => LEVEL_ORDER.indexOf(l.level) * 2 + (l.category === 'certificate' ? 1 : 0);
 
 // One learning path: by level, core lessons first, certificate practice last in each level

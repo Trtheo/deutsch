@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 
 import { Star, Flame, CheckCircle2, LogOut, Save, KeyRound, Eye, EyeOff, User } from 'lucide-react';
-import LESSONS from '../lessons';
+import LESSONS, { AVAILABLE_LEVELS, MIN_PASSWORD } from '../lessons';
 
 const AVATARS = ['🧑','👩','👨','🧑‍💻','👩‍💻','👨‍💻','🧑‍🎓','👩‍🎓','👨‍🎓','🦊','🐼','🦁','🐸','🤖','👾','🎓','⭐'];
 
@@ -49,7 +49,7 @@ export default function ProfilePage() {
 
   const handleChangePassword = async () => {
     if (!curPw || !newPw) return toast.error('Both password fields are required.');
-    if (newPw.length < 6) return toast.error('New password must be at least 6 characters.');
+    if (newPw.length < MIN_PASSWORD) return toast.error(`New password must be at least ${MIN_PASSWORD} characters.`);
     setPwLoading(true);
     try {
       await savePassword({ currentPassword: curPw, newPassword: newPw });
@@ -169,7 +169,7 @@ export default function ProfilePage() {
         <div>
           <label className="text-gray-500 dark:text-gray-400 text-xs font-semibold uppercase tracking-wide block mb-2">Level</label>
           <div className="grid grid-cols-4 gap-2">
-            {['A1','A2','B1','B2'].map(l => (
+            {AVAILABLE_LEVELS.map(l => (
               <button key={l} onClick={() => setLevel(l)}
                 className={`py-2 rounded-xl text-sm font-bold transition-all
                   ${level === l ? 'bg-yellow-400 text-gray-900' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
@@ -202,7 +202,7 @@ export default function ProfilePage() {
           <label className="text-gray-500 dark:text-gray-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">New Password</label>
           <div className="relative">
             <input className="input pr-10" type={showNew ? 'text' : 'password'} value={newPw}
-              onChange={e => setNewPw(e.target.value)} placeholder="Min. 6 characters"
+              onChange={e => setNewPw(e.target.value)} placeholder={`At least ${MIN_PASSWORD} characters`}
               onKeyDown={e => e.key === 'Enter' && handleChangePassword()} />
             <button type="button" onClick={() => setShowNew(s => !s)}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">

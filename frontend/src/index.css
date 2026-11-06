@@ -198,3 +198,8 @@
 
 /* Toast timer bar: shrinks over the toast's lifetime */
 @keyframes toast-progress { from { width: 100%; } to { width: 0%; } }
+
+/* Phones: 16px text in form fields, so iOS doesn't zoom in when a field is tapped (pinch-zoom stays allowed) */
+@media (max-width: 640px) {
+  input, select, textarea { font-size: 16px !important; }
+}
