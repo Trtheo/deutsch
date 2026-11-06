@@ -10,7 +10,8 @@ const crypto = require('crypto');
 const { Lesson, Exam, Progress, User, Contact, Comment, Message, Resource } = require('./models');
 const { seedDatabase } = require('./seed');
 const { buildFallbackExam } = require('./fallback');
-const { hasExamBank, buildExamFromBank, buildExamFromContent, examForStudent, gradeExam } = require('./examBank');
+const { LEVEL_EXAM, buildExam, buildExamFromContent, examForStudent, gradeExam } = require('./examBank');
+const { getPools } = require('./questionGen');
 const mailer = require('./mailer');
 const emails = require('./emails');
 const { translate, TranslateError } = require('./translate');
@@ -864,16 +865,29 @@ app.post('/api/exams/generate', authMiddleware, async (req, res) => {
   const { lessonSlug } = req.body;
   const questionCount = Math.min(50, Math.max(5, Number(req.body.questionCount) || 10));
   try {
-    const lesson = await Lesson.findOne({ slug: lessonSlug });
-    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
-
-    // No AI: built-in lessons have a hand-written question bank; lessons saved earlier
-    // get questions built from their own vocabulary, or a template exam as last resort
-    const fromBank = hasExamBank(lesson);
-    const { parts } = fromBank
-      ? buildExamFromBank(lesson, questionCount)
-      : (buildExamFromContent(lesson, questionCount) || buildFallbackExam(lesson, lesson.level, questionCount));
-    const exam = await Exam.create({ lessonSlug, lessonTitle: lesson.title, level: lesson.level, questionCount, parts, createdBy: req.user.id, aiGenerated: false });
+    // No AI. Built-in lessons mix their hand-written bank with questions generated from the
+    // lesson's own words and sentences (1000+ per part and level); everything comes from memory.
+    const pools = getPools();
+    const levelMatch = LEVEL_EXAM.exec(String(lessonSlug || ''));
+    let parts, lessonTitle, level, fromBank = true;
+    if (levelMatch) {
+      level = levelMatch[1];
+      if (!pools.levels[level]) return res.status(404).json({ error: 'No lessons for this level yet' });
+      ({ parts } = buildExam({ bank: pools.levelBanks[level], generated: pools.levels[level] }, questionCount));
+      lessonTitle = `${level} mixed practice (all lessons)`;
+    } else if (pools.lessons[lessonSlug]) {
+      const lesson = await Lesson.findOne({ slug: lessonSlug }).select('title level').lean();
+      if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+      ({ parts } = buildExam({ bank: pools.banks[lessonSlug], generated: pools.lessons[lessonSlug] }, questionCount));
+      lessonTitle = lesson.title; level = lesson.level;
+    } else {
+      // Lessons saved in the database only: questions from their own content, or a template exam
+      const lesson = await Lesson.findOne({ slug: lessonSlug });
+      if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+      ({ parts } = buildExamFromContent(lesson, questionCount) || buildFallbackExam(lesson, lesson.level, questionCount));
+      lessonTitle = lesson.title; level = lesson.level; fromBank = false;
+    }
+    const exam = await Exam.create({ lessonSlug, lessonTitle, level, questionCount, parts, createdBy: req.user.id, aiGenerated: false });
     res.json({ ...examForStudent(exam), fromBank });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -913,7 +927,8 @@ app.post('/api/exams/:id/submit', authMiddleware, async (req, res) => {
     const progress = await Progress.findOneAndUpdate(
       { userId: String(req.user.id), lessonSlug: exam.lessonSlug },
       {
-        $set: { userId: String(req.user.id), lessonSlug: exam.lessonSlug, status: 'completed', lastActivity: new Date() },
+        // Level practice isn't a lesson: it earns XP but doesn't count as a completed lesson
+        $set: { userId: String(req.user.id), lessonSlug: exam.lessonSlug, status: LEVEL_EXAM.test(exam.lessonSlug) ? 'practice' : 'completed', lastActivity: new Date() },
         $inc: { xp: result.xp },
         $push: { examScores: { examId: String(exam._id), score: result.correct, total: result.total, date: new Date() } },
       },
@@ -1010,6 +1025,7 @@ async function start() {
     process.exit(1);
   }
   await seedDatabase();
+  getPools(); // build the question pools now, so the first exam is instant
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 }

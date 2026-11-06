@@ -668,13 +668,15 @@ describe('lessons and exams (no AI)', () => {
     const words = ['train', 'station', 'ticket', 'platform', 'delay'];
     for (const q of res.body.parts.filling) {
       assert.equal(q.answer, undefined, 'answers are hidden before submission');
-      assert.equal(q.options.length, 4);
+      assert.ok(q.options.length >= 3);
     }
     const full = await Exam.findById(res.body._id).lean();
     for (const q of full.parts.filling) {
-      assert.ok(words.includes(q.answer), q.answer);
       assert.ok(q.options.includes(q.answer));
     }
+    // Meaning questions use the lesson's own words
+    const meaning = full.parts.filling.filter(q => /^Was bedeutet/.test(q.question));
+    for (const q of meaning) assert.ok(words.includes(q.answer), q.answer);
     for (const q of full.parts.listening) assert.ok(q.options.includes(q.answer));
   });
 
@@ -730,16 +732,68 @@ describe('lessons and exams (no AI)', () => {
 describe('built-in exam banks', () => {
   const bankLesson = () => require('../content')[0];
 
-  test('exams for lessons with a bank come from the bank, not AI', async () => {
+  test('exams mix the hand-written bank with questions generated from the lesson, not AI', async () => {
     const { token } = await registerUser();
     const { meta, ...lesson } = bankLesson();
     await Lesson.create(lesson);
-    const res = await request(app).post('/api/exams/generate').set(auth(token)).send({ lessonSlug: lesson.slug, questionCount: 10 });
+    const res = await request(app).post('/api/exams/generate').set(auth(token)).send({ lessonSlug: lesson.slug, questionCount: 20 });
     assert.equal(res.status, 200);
     assert.equal(res.body.fromBank, true);
     assert.equal(res.body.aiGenerated, false);
-    const bankQuestions = lesson.content.exam.filling.map(q => q.question);
-    assert.ok(res.body.parts.filling.every(q => bankQuestions.includes(q.question)));
+    const bankQuestions = new Set(lesson.content.exam.filling.map(q => q.question));
+    const filling = res.body.parts.filling;
+    assert.equal(filling.length, 4);
+    assert.ok(filling.some(q => bankQuestions.has(q.question)), 'some hand-written');
+    assert.ok(filling.some(q => q.generated && q.lessonSlug === lesson.slug), 'some generated from this lesson');
+  });
+
+  test('two exams for the same lesson are different (random from a large pool)', async () => {
+    const { token } = await registerUser();
+    const { meta, ...lesson } = bankLesson();
+    await Lesson.create(lesson);
+    const take = async () => (await request(app).post('/api/exams/generate').set(auth(token)).send({ lessonSlug: lesson.slug, questionCount: 30 })).body;
+    const [a, b] = [await take(), await take()];
+    const sig = e => Object.values(e.parts).flat().map(q => q.question + (q.text || q.script || q.questionEn || '')).join('|');
+    assert.notEqual(sig(a), sig(b));
+  });
+
+  test('level practice exams draw from every lesson of the level and earn practice XP', async () => {
+    const { token } = await registerUser();
+    const started = await request(app).post('/api/exams/generate').set(auth(token)).send({ lessonSlug: 'level-A1', questionCount: 50 });
+    assert.equal(started.status, 200);
+    assert.equal(started.body.level, 'A1');
+    assert.match(started.body.lessonTitle, /A1 mixed practice/);
+    const all = Object.values(started.body.parts).flat();
+    assert.equal(all.length, 50);
+    assert.ok(new Set(all.map(q => q.lessonSlug).filter(Boolean)).size > 3, 'questions from many lessons');
+    const submitted = await request(app).post(`/api/exams/${started.body._id}/submit`).set(auth(token)).send({ answers: {} });
+    assert.equal(submitted.status, 200);
+    assert.equal(submitted.body.progress.status, 'practice', 'not counted as a completed lesson');
+  });
+
+  test('graded exams explain every answer: what was right, wrong and how to fix it', async () => {
+    const { token } = await registerUser();
+    const { meta, ...lesson } = bankLesson();
+    await Lesson.create(lesson);
+    const started = await request(app).post('/api/exams/generate').set(auth(token)).send({ lessonSlug: lesson.slug, questionCount: 20 });
+    const full = await Exam.findById(started.body._id).lean();
+    const answers = {};
+    let typo = null, wrongChoice = null;
+    for (const part of ['filling', 'writing', 'speaking', 'reading', 'listening']) {
+      full.parts[part].forEach((q, i) => {
+        const key = `${part}-${i}`;
+        if (q.options?.length && !wrongChoice) { wrongChoice = key; answers[key] = q.options.find(o => o !== q.answer); }
+        else if (q.check === 'similar' && !typo) { typo = key; answers[key] = q.answer.toLowerCase(); }
+        else answers[key] = q.answer;
+      });
+    }
+    const res = await request(app).post(`/api/exams/${started.body._id}/submit`).set(auth(token)).send({ answers });
+    const { items, parts } = res.body.result;
+    assert.equal(items[wrongChoice].status, 'wrong');
+    assert.ok(items[wrongChoice].tips[0].includes('but the answer is'));
+    assert.equal(items[wrongChoice].expected, full.parts[wrongChoice.split('-')[0]][Number(wrongChoice.split('-')[1])].answer);
+    if (typo) assert.ok(Array.isArray(items[typo].diff) && items[typo].diff.length > 0, 'word-by-word comparison');
+    for (const p of ['filling', 'writing', 'speaking', 'reading', 'listening']) assert.equal(parts[p].total, 4);
   });
 
   test('lesson responses never include the answer bank', async () => {

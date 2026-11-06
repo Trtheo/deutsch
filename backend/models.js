@@ -37,7 +37,7 @@ const examSchema = new mongoose.Schema({
 const progressSchema = new mongoose.Schema({
   userId: { type: String, required: true, index: true },
   lessonSlug: String,
-  status: { type: String, enum: ['not_started', 'in_progress', 'completed'], default: 'not_started' },
+  status: { type: String, enum: ['not_started', 'in_progress', 'completed', 'practice'], default: 'not_started' },
   xp: { type: Number, default: 0 },
   examScores: [{ examId: String, score: Number, total: Number, date: Date }],
   streak: { type: Number, default: 0 },

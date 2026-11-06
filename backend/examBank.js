@@ -1,6 +1,11 @@
-// Builds exams from a lesson's hand-written question bank (content.exam), so no AI is needed.
+// Builds exams (no AI) and grades them with friendly, explained feedback.
+// Questions come from the hand-written banks (content.exam) and from questionGen.js, which turns
+// the lessons' own vocabulary, sentences, nouns and verb tables into thousands of questions.
+const { compareText, tokens } = require('./grading');
+
 const PARTS = ['filling', 'writing', 'speaking', 'reading', 'listening'];
 const TYPES = { filling: 'fill', writing: 'write', speaking: 'speak', reading: 'read', listening: 'listen' };
+const LEVEL_EXAM = /^level-(A1|A2|B1|B2)$/; // "all lessons of a level" practice exams
 
 function shuffle(list) {
   const a = [...list];
@@ -11,120 +16,150 @@ function shuffle(list) {
   return a;
 }
 
+// k random items without shuffling the whole (possibly large) list
+function sample(list, k) {
+  if (list.length <= k) return shuffle(list);
+  const picked = new Set();
+  while (picked.size < k) picked.add(Math.floor(Math.random() * list.length));
+  return [...picked].map(i => list[i]);
+}
+
 function hasExamBank(lesson) {
   const bank = lesson?.content?.exam;
   return !!bank && PARTS.some(p => Array.isArray(bank[p]) && bank[p].length > 0);
 }
 
-// Same split as the AI exams: an equal share per part, the remainder goes to filling.
-// If a part has fewer questions than its share, the exam is simply shorter.
-function buildExamFromBank(lesson, questionCount = 10) {
-  const bank = lesson.content.exam;
+const perPartCounts = (questionCount) => {
   const perPart = Math.max(2, Math.floor(questionCount / 5));
   const extra = Math.max(0, questionCount - perPart * 5);
+  return Object.fromEntries(PARTS.map(p => [p, p === 'filling' ? perPart + extra : perPart]));
+};
+
+const prepare = (q, part) => ({ ...q, type: TYPES[part], options: Array.isArray(q.options) && q.options.length ? shuffle(q.options) : [] });
+
+// Mixes hand-written questions (about half, when there are any) with generated ones
+function buildExam({ bank = {}, generated = {} }, questionCount = 10) {
+  const counts = perPartCounts(questionCount);
   const parts = {};
   for (const part of PARTS) {
-    const want = part === 'filling' ? perPart + extra : perPart;
-    parts[part] = shuffle(bank[part] || []).slice(0, want).map(q => ({
-      ...q,
-      type: TYPES[part],
-      options: Array.isArray(q.options) && q.options.length ? shuffle(q.options) : [],
-    }));
+    const want = counts[part];
+    const hand = bank[part] || [];
+    const gen = generated[part] || [];
+    const fromHand = gen.length ? Math.min(hand.length, Math.ceil(want / 2)) : Math.min(hand.length, want);
+    const chosen = [...sample(hand, fromHand), ...sample(gen, want - fromHand)];
+    if (chosen.length < want) chosen.push(...sample(hand.filter(q => !chosen.includes(q)), want - chosen.length));
+    parts[part] = shuffle(chosen).map(q => prepare(q, part));
   }
   return { parts };
 }
 
-// For lessons without a bank (e.g. ones saved before all content was hand-written):
-// builds questions from the lesson's own vocabulary items. Returns null if there aren't enough.
-function buildExamFromContent(lesson, questionCount = 10) {
-  const items = (lesson?.content?.sections || [])
-    .flatMap(s => s.items || [])
-    .filter(i => i?.de && i?.en);
-  const unique = [...new Map(items.map(i => [i.en.toLowerCase(), i])).values()];
-  if (unique.length < 4) return null;
-  const withExample = unique.filter(i => i.example && i.exampleEn);
-
-  const perPart = Math.max(2, Math.floor(questionCount / 5));
-  const extra = Math.max(0, questionCount - perPart * 5);
-  // 3 wrong answers from other items, plus the right one, shuffled
-  const choices = (item, key) => shuffle([item[key], ...shuffle(unique.filter(o => o !== item && o[key]).map(o => o[key])).slice(0, 3)]);
-
-  const filling = shuffle(unique).slice(0, perPart + extra).map(i => ({
-    type: 'fill',
-    question: `Was bedeutet „${i.de}“?`, questionEn: `What does “${i.de}” mean?`,
-    answer: i.en, options: choices(i, 'en'),
-    explanation: `„${i.de}“ = ${i.en}`, explanationEn: `“${i.de}” means “${i.en}”.`,
-  }));
-  const reading = shuffle(withExample).slice(0, perPart).map(i => ({
-    type: 'read',
-    text: i.example, textEn: i.exampleEn,
-    question: `Was bedeutet „${i.de}“ in diesem Satz?`, questionEn: `What does “${i.de}” mean in this sentence?`,
-    answer: i.en, options: choices(i, 'en'),
-    explanation: `„${i.de}“ = ${i.en}`, explanationEn: `“${i.de}” means “${i.en}”.`,
-  }));
-  // Options are other example translations, so this needs at least 4 example sentences
-  const listening = (withExample.length >= 4 ? shuffle(withExample) : []).slice(0, perPart).map(i => ({
-    type: 'listen',
-    script: i.example, scriptEn: i.exampleEn,
-    question: 'Was haben Sie gehört?', questionEn: 'What did you hear?',
-    answer: i.exampleEn, options: choices(i, 'exampleEn'),
-    explanation: i.example, explanationEn: i.exampleEn,
-  }));
-  const writing = shuffle(unique).slice(0, perPart).map(i => ({
-    type: 'write',
-    question: `Schreiben Sie einen Satz mit „${i.de}“.`, questionEn: `Write a sentence using “${i.de}” (${i.en}).`,
-    answer: i.example || i.de, answerEn: i.exampleEn || i.en,
-    tip: 'Use a complete sentence with a subject and a verb.', options: [],
-  }));
-  const speaking = shuffle(withExample.length ? withExample : unique).slice(0, perPart).map(i => ({
-    type: 'speak',
-    question: `Sprechen Sie: „${i.example || i.de}“`, questionEn: `Say: “${i.example || i.de}”`,
-    answer: i.example || i.de, answerEn: i.exampleEn || i.en, pronunciation: i.example || i.de,
-    tip: 'Speak clearly and at a natural pace.', options: [],
-  }));
-  return { parts: { filling, writing, speaking, reading, listening } };
+// Kept for lessons stored in the database only (no generated pool): the bank alone
+function buildExamFromBank(lesson, questionCount = 10) {
+  return buildExam({ bank: lesson.content.exam }, questionCount);
 }
 
-// ── Grading on the server ─────────────────────────────────
-// Before submission the student sees the questions without the answers. Speaking tasks keep their
-// sentence: saying it aloud is the exercise.
-const HIDDEN = { filling: ['answer', 'explanation', 'explanationEn'], reading: ['answer', 'explanation', 'explanationEn'],
-  listening: ['answer', 'explanation', 'explanationEn'], writing: ['answer', 'answerEn', 'tip'], speaking: [] };
-const OPEN_ENDED = new Set(['writing', 'speaking']);
-const XP_PER_CORRECT = 5;
+// For lessons saved by users earlier (no bank, no pool): questions from the lesson's own words
+function buildExamFromContent(lesson, questionCount = 10) {
+  const { buildPools } = require('./questionGen');
+  const { lessons } = buildPools([lesson]);
+  const generated = lessons[lesson.slug];
+  if (!generated || PARTS.every(p => generated[p].length === 0)) return null;
+  return buildExam({ generated }, questionCount);
+}
+
+// ── Before submission ─────────────────────────────────────
+// Answers, explanations and translations that would give the answer away stay on the server.
+// Speaking tasks keep their sentence: saying it aloud is the exercise.
+const HIDDEN = {
+  filling: ['answer', 'explanation', 'explanationEn'],
+  reading: ['answer', 'explanation', 'explanationEn', 'textEn'],
+  listening: ['answer', 'explanation', 'explanationEn', 'scriptEn'],
+  writing: ['answer', 'answerEn', 'tip'],
+  speaking: [],
+};
 
 function examForStudent(exam) {
   const e = typeof exam.toObject === 'function' ? exam.toObject() : exam;
-  if (e.result) return e; // graded: answers are part of the review
+  if (e.result) return e; // graded: everything is part of the review
   const parts = {};
   for (const part of PARTS) {
     parts[part] = (e.parts?.[part] || []).map(q => {
       const copy = { ...q };
       for (const field of HIDDEN[part]) delete copy[field];
+      if (copy.hideAnswer) { delete copy.answer; delete copy.pronunciation; } // "Say in German" tasks
       return copy;
     });
   }
   return { ...e, parts };
 }
 
-// answers: { 'filling-0': 'Äpfel', 'writing-1': '…' }. Open-ended answers count when not empty.
-function gradeExam(exam, answers = {}) {
-  let correct = 0, total = 0;
-  const kept = {};
-  for (const part of PARTS) {
-    (exam.parts?.[part] || []).forEach((q, i) => {
-      const key = `${part}-${i}`;
-      const given = typeof answers[key] === 'string' ? answers[key].slice(0, 2000) : '';
-      if (given) kept[key] = given;
-      total++;
-      const ok = OPEN_ENDED.has(part)
-        ? given.trim().length > 0
-        : given.trim().toLowerCase() === String(q.answer || '').trim().toLowerCase();
-      if (ok) correct++;
-    });
+// ── Grading with feedback ─────────────────────────────────
+const XP_PER_POINT = 5;
+const POINTS = { correct: 1, done: 1, close: 0.5, wrong: 0, skipped: 0 };
+const SPOKEN = '[spoken]'; // "I said it aloud" when the browser can't listen
+
+function gradeQuestion(part, q, given) {
+  const expected = String(q.answer || '');
+  // Multiple choice
+  if (Array.isArray(q.options) && q.options.length) {
+    if (!given) return { status: 'skipped', tips: [`The answer is “${expected}”.`] };
+    const ok = given.trim().toLowerCase() === expected.trim().toLowerCase();
+    const why = q.explanationEn || q.explanation;
+    return ok
+      ? { status: 'correct', tips: why ? [why] : [] }
+      : { status: 'wrong', tips: [`You chose “${given}”, but the answer is “${expected}”.`, ...(why ? [why] : [])] };
   }
-  const pct = total ? Math.round((correct / total) * 100) : 0;
-  return { correct, total, pct, xp: correct * XP_PER_CORRECT, answers: kept };
+  // Translation / exact sentence (generated writing)
+  if (q.check === 'similar') {
+    const r = compareText(given, expected, { mode: 'text' });
+    return r.status === 'correct' && !r.tips.length ? { ...r, tips: ['Perfect — exactly right.'] } : r;
+  }
+  // Read-aloud (generated speaking): the browser's speech recognition is compared with the sentence
+  if (q.check === 'speech') {
+    if (given === SPOKEN) return { status: 'done', tips: ['Marked as spoken. Open the exam in Chrome or Edge to get feedback on your pronunciation.'] };
+    const r = compareText(given, expected, { mode: 'speech' });
+    if (r.status === 'correct') return { ...r, tips: ['Well pronounced — every word was understood.'] };
+    if (r.status === 'skipped') return r;
+    return { ...r, tips: ['Some words weren’t understood. Listen to the sentence again and repeat it slowly — the words marked below are the ones to practise.', ...r.tips.filter(t => t.startsWith('Missing') || t.startsWith('Spelling'))] };
+  }
+  // Free writing or speaking (hand-written tasks): can't be marked word by word
+  if (!given) return { status: 'skipped', tips: ['Have a look at the model answer below.'] };
+  if (given === SPOKEN) return { status: 'done', tips: ['Compare what you said with the model answer below.'] };
+  const words = tokens(given).length;
+  const modelWords = tokens(expected).length;
+  if (words < 3) return { status: 'close', tips: ['Try to write at least a full sentence — subject, verb and the rest.'] };
+  const tips = ['Compare your answer with the model below: did you cover every point of the task?'];
+  if (part === 'writing') {
+    tips.push('Check: verb in second position, nouns with capital letters, and a greeting and closing if it’s a message.');
+    if (modelWords && words < modelWords / 2) tips.push(`Your text has ${words} words; the model has ${modelWords}. Try adding a little more detail.`);
+  }
+  return { status: 'done', tips };
 }
 
-module.exports = { hasExamBank, buildExamFromBank, buildExamFromContent, examForStudent, gradeExam };
+// answers: { 'filling-0': 'Äpfel', 'writing-1': '…', 'speaking-0': '[spoken]' }
+function gradeExam(exam, answers = {}) {
+  let points = 0, total = 0;
+  const kept = {};
+  const items = {};
+  const parts = {};
+  for (const part of PARTS) {
+    parts[part] = { points: 0, total: 0 };
+    (exam.parts?.[part] || []).forEach((q, i) => {
+      const key = `${part}-${i}`;
+      const given = typeof answers[key] === 'string' ? answers[key].slice(0, 2000).trim() : '';
+      if (given) kept[key] = given;
+      const fb = gradeQuestion(part, q, given);
+      const p = POINTS[fb.status] ?? 0;
+      items[key] = { ...fb, points: p, given, expected: q.answer };
+      points += p; total++;
+      parts[part].points += p; parts[part].total++;
+    });
+  }
+  const pct = total ? Math.round((points / total) * 100) : 0;
+  return { correct: points, total, pct, xp: Math.round(points * XP_PER_POINT), answers: kept, items, parts };
+}
+
+module.exports = {
+  PARTS, LEVEL_EXAM, hasExamBank, buildExam, buildExamFromBank, buildExamFromContent,
+  examForStudent, gradeExam, gradeQuestion, SPOKEN,
+};

@@ -57,3 +57,40 @@ test('a failed submission keeps the answers and explains', async () => {
   expect(screen.getByRole('alert')).toHaveTextContent('already submitted');
   expect(screen.getByText('Submit Exam')).toBeInTheDocument();
 });
+
+test('the review shows what was right, what was wrong, why, and how to fix it', async () => {
+  const writing = { type: 'write', check: 'similar', question: 'Übersetzen Sie ins Deutsche:', questionEn: 'I buy a bread.' };
+  const exam = { ...started, parts: { ...started.parts, writing: [writing] } };
+  api.generateExam.mockResolvedValue({ data: exam });
+  const result = {
+    correct: 0.5, total: 2, pct: 25, xp: 3,
+    answers: { 'filling-0': 'ein', 'writing-0': 'Ich kaufe ein Brod' },
+    parts: { filling: { points: 0, total: 1 }, writing: { points: 0.5, total: 1 }, speaking: { points: 0, total: 0 }, reading: { points: 0, total: 0 }, listening: { points: 0, total: 0 } },
+    items: {
+      'filling-0': { status: 'wrong', points: 0, given: 'ein', expected: 'einen', tips: ['You chose “ein”, but the answer is “einen”.', '"der Apfel" is masculine: einen.'] },
+      'writing-0': {
+        status: 'close', points: 0.5, given: 'Ich kaufe ein Brod', expected: 'Ich kaufe ein Brot.',
+        diff: [{ type: 'ok', word: 'Ich' }, { type: 'ok', word: 'kaufe' }, { type: 'ok', word: 'ein' }, { type: 'spelling', word: 'Brot', given: 'Brod' }],
+        tips: ['Spelling: “Brod” → “Brot”.'],
+      },
+    },
+  };
+  const gradedExam = { ...exam, parts: { ...exam.parts, filling: [{ ...question, answer: 'einen' }], writing: [{ ...writing, answer: 'Ich kaufe ein Brot.' }] }, result };
+  api.submitExam.mockResolvedValue({ data: { exam: gradedExam, result, progress: { lessonSlug: 'a1-shopping', status: 'completed', xp: 3, examScores: [] } } });
+
+  render(<App />);
+  fireEvent.click(await screen.findByText('Start Exam'));
+  fireEvent.click(await screen.findByText('ein'));
+  await act(async () => fireEvent.click(screen.getByText('Submit Exam')));
+
+  // Starts on the first part with a mistake
+  expect(screen.getByText('✗ Not quite')).toBeInTheDocument();
+  expect(screen.getByText(/but the answer is “einen”/)).toBeInTheDocument();
+  expect(screen.getByText(/Why, and how to fix it/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getAllByRole('button', { name: /Writing/ })[0]);
+  expect(screen.getByText('≈ Almost')).toBeInTheDocument();
+  expect(screen.getByText('Spelling: “Brod” → “Brot”.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Word by word')).toHaveTextContent('Brod → Brot');
+  expect(screen.getByText('Ich kaufe ein Brot.')).toBeInTheDocument();
+});

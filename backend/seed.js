@@ -671,4 +671,4 @@ async function seedDatabase() {
   }
 }
 
-module.exports = { seedDatabase };
+module.exports = { seedDatabase, lessons };
