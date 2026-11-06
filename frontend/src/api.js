@@ -92,5 +92,8 @@ export const adminBroadcast     = (data)       => api.post('/admin/broadcast', d
 
 // Resources
 export const uploadResource = (slug, formData) => api.post(`/lessons/${slug}/resources`, formData);
+export const getLessonResources = (slug) => api.get(`/lessons/${slug}/resources`);
+export const getResource        = (id)   => api.get(`/resources/${id}`);      // includes the text
+export const deleteResource     = (id)   => api.delete(`/resources/${id}`);
 
 export default api;

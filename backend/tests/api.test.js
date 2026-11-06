@@ -759,12 +759,54 @@ describe('resource uploads', () => {
     return token;
   }
 
-  test('accepts a small .txt file', async () => {
+  test('a .txt file is stored and can be read back', async () => {
     const token = await setup();
     const res = await request(app).post('/api/lessons/greetings/resources').set(auth(token))
       .field('title', 'Notes').attach('file', Buffer.from('Hallo Welt'), 'notes.txt');
-    assert.equal(res.status, 200);
-    assert.equal(res.body.extractedText, 'Hallo Welt');
+    assert.equal(res.status, 201);
+    assert.equal(res.body.fileName, 'notes.txt');
+    assert.equal(res.body.hasText, true);
+    assert.equal(res.body.text, undefined, 'the list never carries file contents');
+    const full = await request(app).get(`/api/resources/${res.body._id}`).set(auth(token));
+    assert.equal(full.body.text, 'Hallo Welt');
+  });
+
+  test('admin resources are shared; a student’s stay private; owner or admin can delete', async () => {
+    await Lesson.create({ slug: 'greetings', title: 'Greetings', level: 'A1', category: 'vocabulary' });
+    const boss = await registerUser({ username: 'boss', email: 'boss@example.com' });
+    const adminToken = await makeAdmin(boss);
+    const anna = await registerUser();
+    const ben = await registerUser({ username: 'ben', email: 'ben@example.com' });
+    const add = (token, title) => request(app).post('/api/lessons/greetings/resources').set(auth(token))
+      .field('title', title).field('url', 'https://www.dw.com/de/deutsch-lernen/s-2055');
+
+    const shared = (await add(adminToken, 'DW: Deutsch lernen')).body;
+    const privateNote = (await add(anna.token, 'My notes')).body;
+    assert.equal(shared.shared, true);
+    assert.equal(privateNote.shared, false);
+
+    const list = token => request(app).get('/api/lessons/greetings/resources').set(auth(token)).then(r => r.body.map(x => x.title));
+    assert.deepEqual(await list(anna.token), ['DW: Deutsch lernen', 'My notes']);
+    assert.deepEqual(await list(ben.token), ['DW: Deutsch lernen'], 'others never see private resources');
+    assert.equal((await request(app).get(`/api/resources/${privateNote._id}`).set(auth(ben.token))).status, 404);
+
+    assert.equal((await request(app).delete(`/api/resources/${privateNote._id}`).set(auth(ben.token))).status, 404);
+    assert.equal((await request(app).delete(`/api/resources/${shared._id}`).set(auth(anna.token))).status, 404);
+    assert.equal((await request(app).delete(`/api/resources/${privateNote._id}`).set(auth(anna.token))).status, 200);
+    assert.equal((await request(app).delete(`/api/resources/${shared._id}`).set(auth(adminToken))).status, 200);
+  });
+
+  test('needs a title and a link or file, for an existing lesson', async () => {
+    const token = await setup();
+    const post = (slug, fields) => {
+      let r = request(app).post(`/api/lessons/${slug}/resources`).set(auth(token));
+      for (const [k, v] of Object.entries(fields)) r = r.field(k, v);
+      return r;
+    };
+    assert.equal((await post('greetings', { url: 'https://example.com' })).status, 400);
+    assert.equal((await post('greetings', { title: 'Nothing attached' })).status, 400);
+    assert.equal((await post('no-such-lesson', { title: 'x', url: 'https://example.com' })).status, 404);
+    assert.equal((await request(app).get('/api/lessons/greetings/resources')).status, 401);
   });
 
   test('rejects other file types', async () => {
@@ -786,8 +828,9 @@ describe('resource uploads', () => {
   test('rejects non-http links', async () => {
     const token = await setup();
     const res = await request(app).post('/api/lessons/greetings/resources').set(auth(token))
-      .field('url', 'javascript:alert(1)');
+      .field('title', 'Bad link').field('url', 'javascript:alert(1)');
     assert.equal(res.status, 400);
+    assert.match(res.body.error, /http/);
   });
 });
 

@@ -39,3 +39,10 @@ test('there is no AI lesson generator any more', () => {
   expect(screen.queryByText(/Generate/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/\bAI\b/)).not.toBeInTheDocument();
 });
+
+test('"Add" from a lesson opens the upload form for that lesson', async () => {
+  api.getLessons.mockResolvedValue({ data: [{ slug: 'a1-shopping', title: 'Shopping', level: 'A1' }, { slug: 'a2-doctor', title: 'At the Doctor', level: 'A2' }] });
+  render(<ToastProvider><MemoryRouter initialEntries={['/resources?add=a2-doctor']}><ResourcesPage /></MemoryRouter></ToastProvider>);
+  expect(await screen.findByText('Attach a learning resource')).toBeInTheDocument();
+  expect(await screen.findByDisplayValue('At the Doctor (A2)')).toBeInTheDocument();
+});

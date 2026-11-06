@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { SpeakText, LevelBadge } from '../components/UI';
 import { CheckCircle2, ClipboardList, ArrowLeft, ArrowRight, Loader2, SearchX, Brain, MessageSquare, Send, Trash2 } from 'lucide-react';
 import LESSONS from '../lessons';
+import LessonResources from '../components/LessonResources';
 import AlphabetLesson from './lessons/AlphabetLesson';
 import VocabularyLesson from './lessons/VocabularyLesson';
 import NumbersLesson from './lessons/NumbersLesson';
@@ -167,6 +168,9 @@ export default function LessonPage() {
           </Link>
         )}
       </div>
+
+      {/* Extra materials */}
+      <LessonResources slug={slug} />
 
       {/* Comments */}
       <div className="card space-y-4">

@@ -86,6 +86,19 @@ const commentSchema = new mongoose.Schema({
   createdAt:  { type: Date, default: Date.now }
 });
 
+// A link or text file attached to a lesson. Shared with everyone when an admin adds it,
+// private to its author when a student adds it.
+const resourceSchema = new mongoose.Schema({
+  lessonSlug: { type: String, required: true, index: true },
+  title:      { type: String, required: true, maxlength: 150 },
+  url:        { type: String, default: '' },
+  fileName:   { type: String, default: '' },
+  text:       { type: String, default: '' },  // contents of an uploaded .txt / .md file
+  shared:     { type: Boolean, default: false },
+  createdBy:  { id: { type: String, index: true }, username: String },
+  createdAt:  { type: Date, default: Date.now },
+});
+
 // A broadcast from an admin, shown in users' in-app messages (and optionally emailed)
 const messageSchema = new mongoose.Schema({
   subject:    { type: String, required: true, maxlength: 150 },
@@ -102,6 +115,7 @@ const messageSchema = new mongoose.Schema({
 
 module.exports = {
   Message:  mongoose.model('Message', messageSchema),
+  Resource: mongoose.model('Resource', resourceSchema),
   Lesson:   mongoose.model('Lesson', lessonSchema),
   Exam:     mongoose.model('Exam', examSchema),
   Progress: mongoose.model('Progress', progressSchema),

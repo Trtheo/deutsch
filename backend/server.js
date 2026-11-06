@@ -7,7 +7,7 @@ const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { Lesson, Exam, Progress, User, Contact, Comment, Message } = require('./models');
+const { Lesson, Exam, Progress, User, Contact, Comment, Message, Resource } = require('./models');
 const { seedDatabase } = require('./seed');
 const { buildFallbackExam } = require('./fallback');
 const { hasExamBank, buildExamFromBank, buildExamFromContent, examForStudent, gradeExam } = require('./examBank');
@@ -662,6 +662,7 @@ app.delete('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req, 
       Comment.deleteMany({ userId: id }),
       Exam.deleteMany({ createdBy: id }),
       Message.updateMany({}, { $pull: { readBy: id, recipients: id } }),
+      Resource.deleteMany({ 'createdBy.id': id }),
     ]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -804,19 +805,57 @@ app.delete('/api/lessons/:slug', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── Lesson resources ──────────────────────────────────────
+// Visible to you: everything shared by admins, plus your own private ones
+const visibleResources = (req) => ({ $or: [{ shared: true }, { 'createdBy.id': String(req.user.id) }] });
+const resourceSummary = r => ({
+  _id: r._id, lessonSlug: r.lessonSlug, title: r.title, url: r.url, fileName: r.fileName,
+  hasText: !!r.text, size: r.text ? Buffer.byteLength(r.text) : 0, shared: r.shared,
+  createdBy: r.createdBy, createdAt: r.createdAt,
+});
+
 app.post('/api/lessons/:slug/resources', authMiddleware, upload.single('file'), async (req, res) => {
   try {
-    const { title, url } = req.body;
+    const title = String(req.body.title || '').trim().slice(0, 150);
+    const url = String(req.body.url || '').trim();
+    if (!title) return res.status(400).json({ error: 'Please give the resource a title' });
     if (url && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'URL must start with http:// or https://' });
-    const lesson = await Lesson.findOne({ slug: req.params.slug });
-    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
-    let resourceText = '';
-    if (req.file) resourceText = req.file.buffer.toString('utf-8');
-    else if (url) resourceText = `Resource URL: ${url}`;
-    lesson.resources = lesson.resources || [];
-    lesson.resources.push({ title: title || 'Resource', url: url || '', fileType: req.file?.mimetype || 'url' });
-    await lesson.save();
-    res.json({ success: true, extractedText: resourceText.slice(0, 500) });
+    if (!url && !req.file) return res.status(400).json({ error: 'Add a link or a .txt / .md file' });
+    if (!(await Lesson.exists({ slug: req.params.slug }))) return res.status(404).json({ error: 'Lesson not found' });
+    const resource = await Resource.create({
+      lessonSlug: req.params.slug, title, url,
+      fileName: req.file?.originalname || '',
+      text: req.file ? req.file.buffer.toString('utf-8') : '',
+      shared: req.user.role === 'admin',
+      createdBy: { id: String(req.user.id), username: req.user.username },
+    });
+    res.status(201).json(resourceSummary(resource));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/lessons/:slug/resources', authMiddleware, async (req, res) => {
+  try {
+    const list = await Resource.find({ lessonSlug: req.params.slug, ...visibleResources(req) }).sort({ shared: -1, createdAt: -1 }).lean();
+    res.json(list.map(resourceSummary));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/resources/:id', authMiddleware, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: 'Resource not found' });
+    const r = await Resource.findOne({ _id: req.params.id, ...visibleResources(req) }).lean();
+    if (!r) return res.status(404).json({ error: 'Resource not found' });
+    res.json({ ...resourceSummary(r), text: r.text });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/resources/:id', authMiddleware, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: 'Resource not found' });
+    const r = await Resource.findById(req.params.id);
+    if (!r || !(req.user.role === 'admin' || r.createdBy?.id === String(req.user.id))) return res.status(404).json({ error: 'Resource not found' });
+    await r.deleteOne();
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

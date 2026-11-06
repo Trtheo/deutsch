@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { searchLessons, getAILessons, deleteLesson, uploadResource, getLessons } from '../api';
 import { LevelBadge, ConfirmDelete } from '../components/UI';
 import { useToast } from '../components/Toast';
@@ -9,7 +10,10 @@ import { Search, BookOpen, Paperclip, Trash2, CheckCircle2, Upload, BookMarked, 
 const SUGGESTIONS = ['doctor', 'Apotheke', 'train', 'shopping', 'Wohnung', 'job interview', 'Perfekt', 'weather', 'bank', 'restaurant'];
 
 export default function ResourcesPage() {
-  const [activeTab, setActiveTab] = useState('search');
+  const [params] = useSearchParams();
+  const addFor = params.get('add');
+  const user = useAuth()?.user;
+  const [activeTab, setActiveTab] = useState(addFor ? 'resources' : 'search');
   const toast = useToast();
 
   // Topic search
@@ -34,9 +38,9 @@ export default function ResourcesPage() {
     Promise.all([getAILessons(), getLessons()]).then(([saved, all]) => {
       setSavedLessons(saved.data);
       setAllLessons(all.data);
-      if (all.data.length > 0) setUploadSlug(all.data[0].slug);
+      if (all.data.length > 0) setUploadSlug(all.data.some(l => l.slug === addFor) ? addFor : all.data[0].slug);
     }).catch(() => {});
-  }, []);
+  }, [addFor]);
 
   const runSearch = async (q = query) => {
     const term = q.trim();
@@ -70,7 +74,7 @@ export default function ResourcesPage() {
     if (uploadFile) fd.append('file', uploadFile);
     try {
       await uploadResource(uploadSlug, fd);
-      toast.success('Resource uploaded!');
+      toast.success(user?.role === 'admin' ? 'Resource added. Every student sees it on the lesson page.' : 'Resource added. You’ll find it on the lesson page (only you can see it).');
       setUploadTitle(''); setUploadUrl(''); setUploadFile(null);
     } catch (e) { toast.error(e.response?.data?.error || 'Upload failed.'); }
     setUploading(false);
@@ -205,7 +209,7 @@ export default function ResourcesPage() {
       {activeTab === 'resources' && (
         <div className="card space-y-4">
           <h2 className="text-gray-900 dark:text-white font-bold">Attach a learning resource</h2>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Attach a text file or a link to any lesson for reference.</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">Attach a link or a text file to a lesson. It appears in the lesson’s Resources section. {user?.role === 'admin' ? 'As an admin, everything you add is shared with all students.' : 'Only you can see what you add.'}</p>
 
           <div>
             <label className="text-gray-500 dark:text-gray-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Attach to lesson</label>
