@@ -863,7 +863,7 @@ app.delete('/api/resources/:id', authMiddleware, async (req, res) => {
 // ── Exams ─────────────────────────────────────────────────
 app.post('/api/exams/generate', authMiddleware, async (req, res) => {
   const { lessonSlug } = req.body;
-  const questionCount = Math.min(50, Math.max(5, Number(req.body.questionCount) || 10));
+  const questionCount = Math.min(100, Math.max(5, Number(req.body.questionCount) || 25));
   try {
     // No AI. Built-in lessons mix their hand-written bank with questions generated from the
     // lesson's own words and sentences (1000+ per part and level); everything comes from memory.

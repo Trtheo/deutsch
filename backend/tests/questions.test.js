@@ -29,10 +29,10 @@ describe('question pools', () => {
     }
   });
 
-  test('every lesson can fill a 50-question exam', () => {
+  test('every lesson can fill a 100-question exam', () => {
     for (const [slug, qs] of Object.entries(pools.lessons)) {
-      const exam = buildExam({ bank: pools.banks[slug], generated: qs }, 50);
-      assert.equal(Object.values(exam.parts).flat().length, 50, slug);
+      const exam = buildExam({ bank: pools.banks[slug], generated: qs }, 100);
+      assert.equal(Object.values(exam.parts).flat().length, 100, slug);
     }
   });
 });

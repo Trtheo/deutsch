@@ -11,7 +11,7 @@ import {
   Shuffle, Eye, CheckCircle2, Wrench,
 } from 'lucide-react';
 
-const COUNTS = [10, 20, 30, 50];
+const COUNTS = [10, 25, 50, 100];
 const PARTS = ['filling', 'writing', 'speaking', 'reading', 'listening'];
 const PART_META = {
   filling:   { Icon: PenLine,    label: 'Fill in the Blanks', labelDe: 'Lückentext', color: 'text-blue-600 dark:text-blue-400',     bg: 'bg-blue-50 dark:bg-blue-500/10',     bar: 'bg-blue-500' },
@@ -56,7 +56,7 @@ export default function ExamsPage() {
   const [params] = useSearchParams();
   const [lessons, setLessons] = useState([]);
   const [lessonSlug, setLessonSlug] = useState(params.get('lesson') || `level-${params.get('level') || 'A1'}`);
-  const [questionCount, setQuestionCount] = useState(10);
+  const [questionCount, setQuestionCount] = useState(25);
   const [exam, setExam] = useState(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('filling');
